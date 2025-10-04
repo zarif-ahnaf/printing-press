@@ -10,3 +10,9 @@ dependencies = [
     "pymupdf>=1.26.4",
     "uvicorn>=0.37.0",
 ]
+
+[dependency-groups]
+dev = [
+    "django-stubs>=5.2.5",
+    "ruff>=0.13.3",
+]
