@@ -1,18 +1,18 @@
 from ninja import Router
-from ninja.errors import HttpError
-from django.contrib.auth import get_user_model
+from django.contrib.auth.models import User
 from typing import List
 
 from wallet.models import Transaction
 from ...http import HttpRequest
 from ...schemas.transaction import TransactionResponse
+from ...auth import AuthBearer
 
-User = get_user_model()
 router = Router(tags=["Transactions"])
 
 
 @router.get(
     "",
+    auth=AuthBearer(),
     response={
         200: List[TransactionResponse],
         403: dict,
@@ -22,12 +22,8 @@ router = Router(tags=["Transactions"])
 )
 def admin_list_user_transactions(
     request: HttpRequest,
-    user_id: int,
 ):
-    try:
-        target_user = User.objects.get(id=user_id)
-    except User.DoesNotExist:
-        raise HttpError(404, "User not found.")
+    target_user = User.objects.get(pk=request.auth.pk)
 
     transactions = Transaction.objects.filter(user=target_user).order_by("-created_at")
 
