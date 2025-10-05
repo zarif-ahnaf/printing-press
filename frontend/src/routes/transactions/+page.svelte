@@ -1,4 +1,3 @@
-<!-- src/routes/transactions/+page.svelte -->
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { format, parseISO, isSameDay } from 'date-fns';
@@ -22,7 +21,6 @@
 	import { BALANCE_URL, TRANSACTIONS_URL } from '$lib/constants/backend';
 	import { token } from '$lib/stores/token.svelte';
 
-	// Types from your API schema
 	type TransactionResponse = {
 		id: number;
 		transaction_type: 'deposit' | 'charge';
@@ -32,7 +30,7 @@
 	};
 
 	type BalanceResponse = {
-		balance: string; // e.g., "482.00"
+		balance: string;
 	};
 
 	type TransactionGroup = {
@@ -182,7 +180,7 @@
 														{transaction.transaction_type}
 													</Badge>
 												</TableCell>
-												<TableCell class="max-w-[220px] truncate">
+												<TableCell class="max-w-[220px] truncate sm:max-w-none">
 													{transaction.description}
 												</TableCell>
 												<TableCell class="text-right font-medium">
@@ -204,11 +202,3 @@
 		</CardContent>
 	</Card>
 </div>
-
-<style>
-	@media (max-width: 640px) {
-		:global(.truncate) {
-			max-width: 140px;
-		}
-	}
-</style>
