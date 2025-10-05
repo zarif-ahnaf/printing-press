@@ -47,6 +47,7 @@ INSTALLED_APPS = [
 CORS_ALLOW_ALL_ORIGINS = True  # CORS
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "servestatic.middleware.ServeStaticMiddleware",  #  Static Files
     "django.contrib.sessions.middleware.SessionMiddleware",
     "corsheaders.middleware.CorsMiddleware",  # CORS
     "django.middleware.common.CommonMiddleware",
