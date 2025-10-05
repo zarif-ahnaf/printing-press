@@ -24,6 +24,7 @@
 		"@tailwindcss/vite": "^4.1.13",
 		"bits-ui": "^2.11.4",
 		"clsx": "^2.1.1",
+		"date-fns": "^4.1.0",
 		"lucide-svelte": "^0.544.0",
 		"mode-watcher": "^1.1.0",
 		"prettier": "^3.6.2",

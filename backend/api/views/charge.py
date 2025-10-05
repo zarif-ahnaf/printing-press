@@ -11,7 +11,7 @@ router = Router(tags=["Wallet"])
 
 
 @router.post(
-    "/charge",
+    "",
     auth=AuthBearer(),
     response={
         200: ChargeResponse,

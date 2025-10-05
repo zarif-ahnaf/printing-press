@@ -13,7 +13,7 @@ router = Router(tags=["Admin Wallet"])
 
 
 @router.post(
-    "/charge",
+    "",
     auth=AuthBearer(),
     response={
         200: AdminChargeResponse,

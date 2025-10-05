@@ -64,7 +64,7 @@
 	}
 </script>
 
-{#if is_logged_in}
+{#if is_logged_in.value}
 	<div class="flex min-h-screen items-center justify-center bg-background p-4">
 		<Card class="w-full max-w-sm">
 			<CardHeader>
