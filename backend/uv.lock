@@ -28,6 +28,7 @@ dependencies = [
     { name = "django" },
     { name = "django-cors-headers" },
     { name = "django-ninja" },
+    { name = "loutils" },
     { name = "pymupdf" },
     { name = "servestatic" },
     { name = "uvicorn" },
@@ -44,6 +45,7 @@ requires-dist = [
     { name = "django", specifier = ">=5.2.7" },
     { name = "django-cors-headers", specifier = ">=4.9.0" },
     { name = "django-ninja", specifier = ">=1.4.3" },
+    { name = "loutils", specifier = ">=1.4.0" },
     { name = "pymupdf", specifier = ">=1.26.4" },
     { name = "servestatic", specifier = ">=3.1.0" },
     { name = "uvicorn", specifier = ">=0.37.0" },
@@ -152,6 +154,12 @@ sdist = { url = "https://files.pythonhosted.org/packages/01/ee/02a2c011bdab74c6f
 wheels = [
     { url = "https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl", hash = "sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86", size = 37515, upload-time = "2025-04-24T03:35:24.344Z" },
 ]
+
+[[package]]
+name = "loutils"
+version = "1.4.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/67/99/990dcb9663c0c46039444dba1640fd1e149398bb553e786a521cb2333aa4/loutils-1.4.0.tar.gz", hash = "sha256:51f6bd787f505da108780274575d086440aebf11fcb2339677c133c2fc30eccb", size = 4853, upload-time = "2022-07-21T14:47:30.101Z" }
 
 [[package]]
 name = "pydantic"
