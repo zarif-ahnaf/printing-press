@@ -5,9 +5,11 @@ services:
     command: ["sh","./scripts/run-django.sh"]
     build:
       context: ./backend
-  
+
   svelte:
     image: printing-press-frontend
     restart: unless-stopped
     build:
       context: ./frontend
+      args:
+        PUBLIC_API_URL: ${PUBLIC_API_URL}
