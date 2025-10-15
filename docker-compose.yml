@@ -1,5 +1,4 @@
 services:
-
   postgres:
     image: postgres:18
     container_name: postgres
@@ -12,20 +11,27 @@ services:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
-  
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d printing_press"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   django:
     image: printing-press
     restart: unless-stopped
-    command: ["sh","./scripts/run-django.sh"]
+    command: ["sh", "./scripts/run-django.sh"]
     build:
       context: ./backend
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   svelte:
     image: printing-press-frontend
     restart: unless-stopped
     build:
       context: ./frontend
-
 
 volumes:
   postgres_data:
