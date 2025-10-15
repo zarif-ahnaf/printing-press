@@ -1,4 +1,6 @@
-const BACKEND_URL = 'http://localhost:8000';
+import { PUBLIC_API_URL } from '$env/static/public';
+
+const BACKEND_URL = PUBLIC_API_URL || 'http://localhost:8000';
 const API_URL = `${BACKEND_URL}/api`;
 
 export var LOGIN_URL = `${API_URL}/user/login/`;
