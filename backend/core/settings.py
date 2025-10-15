@@ -45,7 +45,9 @@ INSTALLED_APPS = [
     "apps.wallet",
     "apps.queue",
 ]
+
 CORS_ALLOW_ALL_ORIGINS = True  # CORS
+
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "servestatic.middleware.ServeStaticMiddleware",  #  Static Files
