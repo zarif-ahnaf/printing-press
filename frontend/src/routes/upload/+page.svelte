@@ -52,7 +52,8 @@
 		enqueueStatus: 'idle' | 'processing' | 'success' | 'error';
 		errorMessage: string | null;
 		isConverting: boolean;
-		isCurrentlyOptimized: boolean; // New: tracks if currently viewing optimized version
+		isCurrentlyOptimized: boolean;
+		previewUrl: string; // Track preview URL for reactivity
 	}
 
 	function formatFileSize(bytes: number): string {
@@ -61,6 +62,23 @@
 		const sizes = ['Bytes', 'KB', 'MB', 'GB'];
 		const i = Math.floor(Math.log(bytes) / Math.log(k));
 		return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+	}
+
+	function updatePreviewUrl(pdfFile: PDFFile) {
+		// Revoke old URL if exists
+		if (pdfFile.previewUrl) {
+			URL.revokeObjectURL(pdfFile.previewUrl);
+		}
+
+		const fileToUse =
+			pdfFile.optimizedFile && pdfFile.isCurrentlyOptimized ? pdfFile.optimizedFile : pdfFile.file;
+
+		// Only create URL for PDFs
+		if (fileToUse.type === 'application/pdf') {
+			pdfFile.previewUrl = URL.createObjectURL(fileToUse);
+		} else {
+			pdfFile.previewUrl = '';
+		}
 	}
 
 	function getFilteredUsers() {
@@ -109,18 +127,29 @@
 				enqueueStatus: 'idle',
 				errorMessage: null,
 				isConverting: false,
-				isCurrentlyOptimized: false // Start with unoptimized view
+				isCurrentlyOptimized: false,
+				previewUrl: file.type === 'application/pdf' ? URL.createObjectURL(file) : ''
 			};
 
 			if (file.type !== 'application/pdf') {
-				// Automatically convert non-PDF files to PDF
 				newFileEntry.isConverting = true;
 				files.push(newFileEntry);
 
 				try {
 					const convertedPDF = await convertFileToPDF(file);
-					newFileEntry.file = convertedPDF;
-					newFileEntry.isConverting = false;
+
+					const updatedFileEntry = {
+						...newFileEntry,
+						file: convertedPDF,
+						isConverting: false
+					};
+
+					// Update preview URL (this mutates the object, but we’ll replace the whole item)
+					updatePreviewUrl(updatedFileEntry);
+
+					// Replace the old entry in files array with new one to trigger reactivity
+					files = files.map((f) => (f.id === updatedFileEntry.id ? updatedFileEntry : f));
+
 					toast.success('File converted to PDF', {
 						description: file.name,
 						duration: 2000
@@ -135,7 +164,6 @@
 					});
 				}
 			} else {
-				// PDF file - add directly
 				files.push(newFileEntry);
 			}
 		}
@@ -153,6 +181,12 @@
 
 	function deleteFile(pdfFile: PDFFile) {
 		if (!confirm(`Delete "${pdfFile.file.name}"? This cannot be undone.`)) return;
+
+		// Clean up preview URL
+		if (pdfFile.previewUrl) {
+			URL.revokeObjectURL(pdfFile.previewUrl);
+		}
+
 		files = files.filter((f) => f.id !== pdfFile.id);
 		if (selectedPdf?.id === pdfFile.id) {
 			selectedPdf = null;
@@ -228,7 +262,6 @@
 			formData.append('files', fileToSubmit);
 		});
 
-		// Only add user_id if admin and selected
 		if (isAdmin && selectedUserId !== null) {
 			formData.append('user_id', selectedUserId.toString());
 		}
@@ -274,7 +307,6 @@
 		try {
 			pdfFile.isOptimizing = true;
 
-			// Count non-blank pages and get cleaned PDF
 			const formData = new FormData();
 			formData.append('file', pdfFile.file);
 			formData.append('return_pdf', 'true');
@@ -301,7 +333,7 @@
 			});
 
 			pdfFile.optimizedFile = optimizedFile;
-
+			updatePreviewUrl(pdfFile); // Update preview after optimization
 			toast.success('File optimized successfully', {
 				description: pdfFile.file.name,
 				duration: 3000
@@ -319,8 +351,8 @@
 	function toggleOptimizationView(pdfFile: PDFFile) {
 		if (pdfFile.optimizedFile) {
 			pdfFile.isCurrentlyOptimized = !pdfFile.isCurrentlyOptimized;
+			updatePreviewUrl(pdfFile); // Update preview when toggling view
 		} else {
-			// If not optimized yet, trigger optimization
 			optimizeFile(pdfFile);
 		}
 	}
@@ -352,6 +384,12 @@
 		window.addEventListener('dragleave', handleDragLeave);
 		window.addEventListener('drop', handleDrop);
 		return () => {
+			// Clean up all blob URLs
+			files.forEach((f) => {
+				if (f.previewUrl) {
+					URL.revokeObjectURL(f.previewUrl);
+				}
+			});
 			window.removeEventListener('dragover', handleDragOver);
 			window.removeEventListener('dragleave', handleDragLeave);
 			window.removeEventListener('drop', handleDrop);
@@ -497,17 +535,26 @@
 
 					<!-- Thumbnail -->
 					<div class="relative aspect-[3/4] w-full bg-muted">
-						<embed
-							src={URL.createObjectURL(
-								pdfFile.optimizedFile && pdfFile.isCurrentlyOptimized
-									? pdfFile.optimizedFile
-									: pdfFile.file
-							)}
-							type="application/pdf"
-							class="h-full w-full cursor-pointer object-cover transition-opacity
-								{pdfFile.isOptimizing || pdfFile.isConverting ? 'opacity-50' : 'opacity-100'}"
-							onclick={() => openPdfDialog(pdfFile)}
-						/>
+						{#if pdfFile.previewUrl}
+							<embed
+								src={pdfFile.previewUrl}
+								type="application/pdf"
+								class="h-full w-full cursor-pointer object-cover transition-opacity
+									{pdfFile.isOptimizing || pdfFile.isConverting ? 'opacity-50' : 'opacity-100'}"
+								onclick={() => openPdfDialog(pdfFile)}
+							/>
+						{:else}
+							<div
+								class="flex h-full w-full items-center justify-center bg-muted text-muted-foreground"
+							>
+								{#if pdfFile.isConverting}
+									<span class="text-sm">Converting...</span>
+								{:else}
+									<FileText class="h-12 w-12" />
+								{/if}
+							</div>
+						{/if}
+
 						{#if pdfFile.isOptimizing || pdfFile.isConverting}
 							<div class="absolute inset-0 flex items-center justify-center bg-black/20">
 								<Progress class="h-1.5 w-12" value={50} />
@@ -630,7 +677,6 @@
 
 	<!-- PDF Preview Dialog -->
 	{#if selectedPdf}
-		<!-- Create a local variable that TypeScript knows is non-null -->
 		{#each [selectedPdf] as pdf (pdf.id)}
 			<Dialog
 				open={isDialogOpen}
@@ -675,6 +721,7 @@
 									size="sm"
 									onclick={() => {
 										pdf.isCurrentlyOptimized = !pdf.isCurrentlyOptimized;
+										updatePreviewUrl(pdf);
 									}}
 								>
 									{pdf.isCurrentlyOptimized ? 'Show Original' : 'Show Cleaned'}
@@ -696,14 +743,24 @@
 
 					<!-- PDF Viewer Area -->
 					<div class="flex flex-1 overflow-hidden bg-muted/30">
-						<iframe
-							title="pdf"
-							src={URL.createObjectURL(
-								pdf.optimizedFile && pdf.isCurrentlyOptimized ? pdf.optimizedFile : pdf.file
-							) + '#toolbar=0&navpanes=0&scrollbar=0&zoom=55'}
-							class="h-full w-full border-0"
-							frameborder="0"
-						></iframe>
+						{#if pdf.previewUrl}
+							<iframe
+								title="pdf"
+								src={pdf.previewUrl + '#toolbar=0&navpanes=0&scrollbar=0&zoom=55'}
+								class="h-full w-full border-0"
+								frameborder="0"
+							></iframe>
+						{:else}
+							<div
+								class="flex h-full w-full items-center justify-center bg-muted text-muted-foreground"
+							>
+								{#if pdf.isConverting}
+									<span>Converting file to PDF...</span>
+								{:else}
+									<span>Preview not available</span>
+								{/if}
+							</div>
+						{/if}
 					</div>
 
 					<!-- Status Bar -->
