@@ -21,7 +21,12 @@
 	import { Progress } from '$lib/components/ui/progress';
 	import { Dialog, DialogContent } from '$lib/components/ui/dialog';
 	import { Badge } from '$lib/components/ui/badge';
-	import { NONBLANK_URL, QUEUE_URL, PDF_CONVERT_URL } from '$lib/constants/backend';
+	import {
+		NONBLANK_URL,
+		QUEUE_URL,
+		PDF_CONVERT_URL,
+		ALL_USER_ENDPOINT
+	} from '$lib/constants/backend';
 	import { goto } from '$app/navigation';
 
 	// Svelte 5 runes
@@ -100,7 +105,7 @@
 				headers.Authorization = `Bearer ${token}`;
 			}
 
-			let url = 'http://127.0.0.1:8000/api/users/';
+			let url = ALL_USER_ENDPOINT;
 			if (searchTerm) {
 				const params = new URLSearchParams({ name: searchTerm });
 				url += `?${params.toString()}`;
@@ -182,7 +187,7 @@
 						isConverting: false
 					};
 
-					// Update preview URL (this mutates the object, but we’ll replace the whole item)
+					// Update preview URL (this mutates the object, but we'll replace the whole item)
 					updatePreviewUrl(updatedFileEntry);
 
 					// Replace the old entry in files array with new one to trigger reactivity
@@ -420,10 +425,17 @@
 	// Handle user search input with debouncing
 	let searchTimeout: any;
 	function handleUserSearch() {
+		isUserDropdownOpen = true;
 		clearTimeout(searchTimeout);
 		searchTimeout = setTimeout(() => {
 			fetchUsers(userSearch);
-		}, 300); // 300ms debounce
+		}, 300);
+	}
+
+	function closeDropdown() {
+		setTimeout(() => {
+			isUserDropdownOpen = false;
+		}, 150);
 	}
 
 	onMount(() => {
@@ -469,7 +481,12 @@
 							placeholder="Search users..."
 							bind:value={userSearch}
 							oninput={handleUserSearch}
-							onblur={() => setTimeout(() => (isUserDropdownOpen = false), 150)}
+							onfocus={() => {
+								if (userSearch) {
+									isUserDropdownOpen = true;
+								}
+							}}
+							onblur={closeDropdown}
 							onkeydown={(e) => {
 								if (e.key === 'Escape') {
 									isUserDropdownOpen = false;
@@ -477,7 +494,7 @@
 							}}
 							class="pr-8"
 						/>
-						{#if userSearch && (isUserDropdownOpen || isLoadingUsers)}
+						{#if (userSearch || isLoadingUsers) && isUserDropdownOpen}
 							<div
 								class="absolute top-full z-50 mt-1 w-full animate-in rounded-md border bg-popover text-popover-foreground shadow-md fade-in-0 outline-none zoom-in-95"
 							>
