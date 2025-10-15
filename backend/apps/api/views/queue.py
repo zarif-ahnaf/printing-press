@@ -38,6 +38,7 @@ def queue_files(
         target_user = current_user
 
     if not files:
+        # Note: This returns 200 with a message — acceptable if intentional
         return {"message": "No files provided"}
 
     # Validate all files first (PDF + page count)
@@ -47,25 +48,25 @@ def queue_files(
     for uploaded_file in files:
         filename = uploaded_file.name
         if not filename:
-            return {"error": "Uploaded file has no name"}, 400
+            raise HttpError(400, "Uploaded file has no name")
 
         if not filename.lower().endswith(".pdf"):
-            return {"error": f"Only PDF files allowed. Invalid: {filename}"}, 400
+            raise HttpError(400, f"Only PDF files allowed. Invalid: {filename}")
 
         file_content = uploaded_file.read()
         try:
             num_pages = count_pdf_pages(file_content, filename)
         except ValueError as e:
-            return {"error": str(e)}, 400
+            raise HttpError(400, str(e))
 
         if num_pages == 0:
-            return {"error": f"No valid pages found in {filename}"}, 400
+            raise HttpError(400, f"No valid pages found in {filename}")
 
         total_pages += num_pages
         file_data_list.append((filename, file_content, num_pages))
 
     if total_pages == 0:
-        return {"error": "No valid pages found in uploaded files"}, 400
+        raise HttpError(400, "No valid pages found in uploaded files")
 
     # Decide whether to charge
     is_admin_upload = user_id is not None  # i.e., admin acting on behalf of someone
@@ -83,9 +84,9 @@ def queue_files(
 
             # Pre-check: can they afford it?
             if wallet.balance < total_cost:
-                return {"error": "Insufficient wallet balance"}, 400
+                raise HttpError(400, "Insufficient wallet balance")
 
-            # Now charge per file (as in original logic)
+            # Now charge per file
             for filename, content, num_pages in file_data_list:
                 file_cost = COST_PER_PAGE * num_pages
                 try:
@@ -94,7 +95,7 @@ def queue_files(
                         description=f"Queue {filename} - {num_pages} page(s) - {file_cost} BDT",
                     )
                 except ValueError as e:
-                    return {"error": str(e)}, 400
+                    raise HttpError(400, str(e))
 
                 transaction_records.append(
                     Transaction(
