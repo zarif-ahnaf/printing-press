@@ -48,9 +48,10 @@
 	}>();
 
 	const formatCurrency = (value: number) => {
-		return new Intl.NumberFormat('en-US', {
+		return new Intl.NumberFormat('bn-BD', {
 			style: 'currency',
-			currency: 'USD'
+			currency: 'BDT',
+			currencyDisplay: 'symbol'
 		}).format(value);
 	};
 

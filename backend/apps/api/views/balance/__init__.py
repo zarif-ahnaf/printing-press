@@ -2,9 +2,9 @@
 from ninja import Router, Schema
 from django.shortcuts import get_object_or_404
 from apps.wallet.models import Wallet
-from ..auth import AuthBearer
+from ...auth import AuthBearer
 from django.contrib.auth.models import User
-from ..decorators import admin_required
+from ...decorators import admin_required
 
 router = Router()
 
