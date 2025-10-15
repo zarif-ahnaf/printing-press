@@ -28,13 +28,19 @@ api.add_router("user/", logout_router)
 
 from .views.admin.charge import router as admin_charge_router
 from .views.admin.deposit import router as admin_deposit_router
+from .views.admin.queue import router as admin_queue_router
 
 api.add_router("admin/deposit/", admin_deposit_router)
 api.add_router("admin/charge/", admin_charge_router)
+api.add_router("admin/queue/", admin_queue_router)
 
 from .views.transactions import router as transactions_router
 
 api.add_router("transactions/", transactions_router)
+
+from .views.queue import router as queue_router
+
+api.add_router("queue/", queue_router)
 
 urlpatterns = [
     path("", api.urls),
