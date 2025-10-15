@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "ninja",
     "apps.api",
     "apps.wallet",
+    "apps.queue",
 ]
 CORS_ALLOW_ALL_ORIGINS = True  # CORS
 MIDDLEWARE = [
