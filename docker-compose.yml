@@ -1,4 +1,18 @@
 services:
+
+  postgres:
+    image: postgres:18
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: printing-press
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: supersecretpassword
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+  
   django:
     image: printing-press
     restart: unless-stopped
@@ -11,3 +25,7 @@ services:
     restart: unless-stopped
     build:
       context: ./frontend
+
+
+volumes:
+  postgres_data:
