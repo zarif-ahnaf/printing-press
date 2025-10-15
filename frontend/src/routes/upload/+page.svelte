@@ -12,7 +12,10 @@
 		Eye,
 		Users,
 		ArrowLeft,
-		TriangleAlert
+		TriangleAlert,
+
+		X
+
 	} from 'lucide-svelte';
 
 	import { Button } from '$lib/components/ui/button';
@@ -242,52 +245,6 @@
 		});
 	}
 
-	async function enqueuePDF(pdfFile: PDFFile, fileToSubmit: File) {
-		try {
-			const formData = new FormData();
-			formData.append('files', fileToSubmit);
-
-			if (isAdmin && selectedUserId !== null) {
-				formData.append('user_id', selectedUserId.toString());
-			}
-
-			const token = localStorage.getItem('token');
-			const headers: Record<string, string> = {};
-			if (token) {
-				headers.Authorization = `Bearer ${token}`;
-			}
-
-			processingFiles = [...processingFiles, pdfFile.id];
-			pdfFile.enqueueStatus = 'processing';
-
-			const res = await fetch(QUEUE_URL, {
-				method: 'POST',
-				headers,
-				body: formData
-			});
-
-			if (!res.ok) {
-				const errorText = await res.text();
-				throw new Error(errorText || `Failed to enqueue ${pdfFile.file.name}`);
-			}
-
-			pdfFile.enqueueStatus = 'success';
-			toast.success('File enqueued successfully', {
-				description: pdfFile.file.name,
-				duration: 3000
-			});
-		} catch (error: any) {
-			pdfFile.enqueueStatus = 'error';
-			pdfFile.errorMessage = error.message;
-			toast.error('Enqueue failed', {
-				description: error.message,
-				duration: 5000
-			});
-		} finally {
-			processingFiles = processingFiles.filter((id) => id !== pdfFile.id);
-		}
-	}
-
 	async function submitAll() {
 		const filesToSubmit = files.filter((f) => f.enqueueStatus !== 'success');
 		if (filesToSubmit.length === 0) {
@@ -309,7 +266,8 @@
 		if (isAdmin && selectedUserId !== null) {
 			formData.append('user_id', selectedUserId.toString());
 		}
-
+		console.log(selectedUserId);
+		console.log(formData);
 		const token = localStorage.getItem('token');
 		const headers: Record<string, string> = {};
 		if (token) {
@@ -475,27 +433,51 @@
 					<Users class="h-4 w-4 text-muted-foreground" />
 					<span class="text-sm font-medium">Upload for:</span>
 
-					<!-- Searchable user input using shadcn Input -->
+					<!-- User selection input with clear button -->
 					<div class="relative w-[240px]">
-						<Input
-							type="text"
-							placeholder="Search users..."
-							bind:value={userSearch}
-							oninput={handleUserSearch}
-							onfocus={() => {
-								if (userSearch) {
-									isUserDropdownOpen = true;
-								}
-							}}
-							onblur={closeDropdown}
-							onkeydown={(e) => {
-								if (e.key === 'Escape') {
-									isUserDropdownOpen = false;
-								}
-							}}
-							class="pr-8"
-						/>
-						{#if (userSearch || isLoadingUsers) && isUserDropdownOpen}
+						<div
+							class="flex items-center rounded-md border border-input bg-background px-3 py-2 focus-within:ring-1 focus-within:ring-ring"
+						>
+							<Input
+								type="text"
+								placeholder="Search users..."
+								bind:value={userSearch}
+								oninput={handleUserSearch}
+								onfocus={() => {
+									if (!selectedUserId) {
+										isUserDropdownOpen = true;
+									}
+								}}
+								onblur={closeDropdown}
+								onkeydown={(e) => {
+									if (e.key === 'Escape') {
+										isUserDropdownOpen = false;
+									}
+								}}
+								disabled={!!selectedUserId}
+								class="flex-1 border-0 bg-transparent pr-8 focus-visible:ring-0 focus-visible:ring-offset-0"
+							/>
+							{#if selectedUserId}
+								<Button
+									type="button"
+									variant="ghost"
+									size="icon"
+									class="ml-1 h-5 w-5 text-muted-foreground hover:text-foreground"
+									onclick={(e) => {
+										e.stopPropagation();
+										selectedUserId = null;
+										userSearch = '';
+										isUserDropdownOpen = false;
+									}}
+									aria-label="Clear selected user"
+								>
+									<X class="h-3.5 w-3.5" />
+								</Button>
+							{/if}
+						</div>
+
+						<!-- Dropdown: only show if no user selected and searching/loading -->
+						{#if (userSearch || isLoadingUsers) && isUserDropdownOpen && !selectedUserId}
 							<div
 								class="absolute top-full z-50 mt-1 w-full animate-in rounded-md border bg-popover text-popover-foreground shadow-md fade-in-0 outline-none zoom-in-95"
 							>

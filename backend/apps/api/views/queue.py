@@ -20,10 +20,9 @@ COST_PER_PAGE = Decimal("1.0")
 def queue_files(
     request: HttpRequest,
     files: File[list[UploadedFile]],
-    user_id: Form[int] | None = None,
+    user_id: Form[int | None] = None,
 ):
     current_user = request.auth
-
     # Determine target user
     if user_id is not None:
         # Admin trying to specify a user
@@ -33,6 +32,7 @@ def queue_files(
             target_user = User.objects.get(id=user_id)
         except User.DoesNotExist:
             raise HttpError(404, "User not found.")
+        print("hello")
     else:
         # Regular user uploading for themselves
         target_user = current_user
@@ -68,58 +68,43 @@ def queue_files(
     if total_pages == 0:
         raise HttpError(400, "No valid pages found in uploaded files")
 
-    # Decide whether to charge
-    is_admin_upload = user_id is not None  # i.e., admin acting on behalf of someone
-
     with transaction.atomic():
         queue_items = []
         transaction_records = []
 
-        if not is_admin_upload:
-            # Non-admin: charge the current user (who is also target_user)
-            wallet = Wallet.objects.select_for_update().get_or_create(user=target_user)[
-                0
-            ]
-            # total_cost = COST_PER_PAGE * total_pages
-            # # Pre-check: can they afford it?
-            # if wallet.balance < total_cost:
-            #     raise HttpError(400, "Insufficient wallet balance")
+        wallet = Wallet.objects.select_for_update().get_or_create(user=target_user)[0]
+        # total_cost = COST_PER_PAGE * total_pages
+        # # Pre-check: can they afford it?
+        # if wallet.balance < total_cost:
+        #     raise HttpError(400, "Insufficient wallet balance")
 
-            # Now charge per file
-            for filename, content, num_pages in file_data_list:
-                file_cost = COST_PER_PAGE * num_pages
-                try:
-                    wallet.charge(
-                        file_cost,
-                        description=f"Queue {filename} - {num_pages} page(s) - {file_cost} BDT",
-                    )
-                except ValueError as e:
-                    raise HttpError(400, str(e))
-
-                transaction_records.append(
-                    Transaction(
-                        wallet=wallet,
-                        user=target_user,
-                        transaction_type="charge",
-                        amount=file_cost,
-                        description=f"Printed {filename} - {num_pages} pages - {file_cost} BDT",
-                    )
+        # Now charge per file
+        for filename, content, num_pages in file_data_list:
+            file_cost = COST_PER_PAGE * num_pages
+            try:
+                wallet.charge(
+                    file_cost,
+                    description=f"Queue {filename} - {num_pages} page(s) - {file_cost} BDT",
                 )
+            except ValueError as e:
+                raise HttpError(400, str(e))
 
-                file_for_db = SimpleUploadedFile(
-                    name=filename, content=content, content_type="application/pdf"
+            transaction_records.append(
+                Transaction(
+                    wallet=wallet,
+                    user=target_user,
+                    transaction_type="charge",
+                    amount=file_cost,
+                    description=f"Printed {filename} - {num_pages} pages - {file_cost} BDT",
                 )
-                queue_items.append(Queue(file=file_for_db, user=target_user))
+            )
 
-            Transaction.objects.bulk_create(transaction_records)
+            file_for_db = SimpleUploadedFile(
+                name=filename, content=content, content_type="application/pdf"
+            )
+            queue_items.append(Queue(file=file_for_db, user=target_user))
 
-        else:
-            # Admin upload: no charging, just queue for target_user
-            for filename, content, num_pages in file_data_list:
-                file_for_db = SimpleUploadedFile(
-                    name=filename, content=content, content_type="application/pdf"
-                )
-                queue_items.append(Queue(file=file_for_db, user=target_user))
+        Transaction.objects.bulk_create(transaction_records)
 
         # Create queue items in all cases
         created_items = Queue.objects.bulk_create(queue_items)
@@ -128,9 +113,7 @@ def queue_files(
         "message": f"{len(created_items)} file(s) queued successfully",
         "total_pages": total_pages,
         "queue_ids": [item.pk for item in created_items],
+        "total_charged_bdt": str(COST_PER_PAGE * total_pages),
     }
-
-    if not is_admin_upload:
-        response["total_charged_bdt"] = str(COST_PER_PAGE * total_pages)
 
     return response

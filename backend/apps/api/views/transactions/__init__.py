@@ -1,11 +1,13 @@
 from ninja import Router
 from django.contrib.auth.models import User
 from typing import List
+from django.shortcuts import get_object_or_404
 
 from apps.wallet.models import Transaction
 from ...http import HttpRequest
 from ...schemas.transaction import TransactionResponse
 from ...auth import AuthBearer
+from ...decorators import admin_required
 
 router = Router(tags=["Transactions"])
 
@@ -20,11 +22,47 @@ router = Router(tags=["Transactions"])
         400: dict,
     },
 )
-def admin_list_user_transactions(
+def list_user_transactions(
     request: HttpRequest,
 ):
     target_user = User.objects.get(pk=request.auth.pk)
 
+    transactions = Transaction.objects.filter(user=target_user).order_by("-created_at")
+
+    return [
+        TransactionResponse(
+            id=txn.pk,
+            transaction_type=txn.transaction_type,
+            amount=str(txn.amount),
+            description=txn.description,
+            created_at=txn.created_at.isoformat(),
+        )
+        for txn in transactions
+    ]
+
+
+@router.get(
+    "/{username}",
+    auth=AuthBearer(),
+    response={
+        200: List[TransactionResponse],
+        403: dict,
+        404: dict,
+        400: dict,
+    },
+)
+@admin_required
+def get_user_transactions_by_username(
+    request: HttpRequest,
+    username: str,
+):
+    """
+    Get transaction history for a specific user by username.
+    """
+    # Get the target user by username
+    target_user = get_object_or_404(User, username=username)
+
+    # Get transactions for the target user
     transactions = Transaction.objects.filter(user=target_user).order_by("-created_at")
 
     return [
