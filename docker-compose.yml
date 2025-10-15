@@ -5,7 +5,7 @@ services:
     container_name: postgres
     restart: unless-stopped
     environment:
-      POSTGRES_DB: printing-press
+      POSTGRES_DB: printing_press
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: supersecretpassword
     volumes:
