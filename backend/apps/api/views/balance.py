@@ -1,7 +1,7 @@
 # your_app/api.py
 from ninja import Router, Schema
 from django.shortcuts import get_object_or_404
-from wallet.models import Wallet
+from apps.wallet.models import Wallet
 from ..auth import AuthBearer
 
 router = Router()

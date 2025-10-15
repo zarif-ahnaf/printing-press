@@ -4,7 +4,7 @@ from decimal import Decimal
 from django.db import transaction as db_transaction
 from ..auth import AuthBearer
 from ..http import HttpRequest
-from wallet.models import Wallet, Transaction
+from apps.wallet.models import Wallet, Transaction
 from ..schemas.wallet import ChargeRequest, ChargeResponse
 
 router = Router(tags=["Wallet"])

@@ -2,7 +2,7 @@ from ninja import Router
 from django.contrib.auth.models import User
 from typing import List
 
-from wallet.models import Transaction
+from apps.wallet.models import Transaction
 from ...http import HttpRequest
 from ...schemas.transaction import TransactionResponse
 from ...auth import AuthBearer

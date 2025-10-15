@@ -41,8 +41,8 @@ INSTALLED_APPS = [
     "corsheaders",
     # Custom
     "ninja",
-    "api",
-    "wallet",
+    "apps.api",
+    "apps.wallet",
 ]
 CORS_ALLOW_ALL_ORIGINS = True  # CORS
 MIDDLEWARE = [

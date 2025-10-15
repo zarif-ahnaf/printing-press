@@ -3,7 +3,7 @@ from ninja.errors import HttpError
 from decimal import Decimal
 from django.db import transaction as db_transaction
 from django.contrib.auth.models import User
-from wallet.models import Wallet, Transaction
+from apps.wallet.models import Wallet, Transaction
 from ...auth import AuthBearer
 from ...http import HttpRequest
 from ...decorators import admin_required

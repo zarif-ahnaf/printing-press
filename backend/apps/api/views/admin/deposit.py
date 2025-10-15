@@ -4,7 +4,7 @@ from django.db import transaction as db_transaction
 from django.contrib.auth.models import User
 from decimal import Decimal, InvalidOperation
 
-from wallet.models import Wallet, Transaction
+from apps.wallet.models import Wallet, Transaction
 from ...auth import AuthBearer
 from ...http import HttpRequest
 from ...decorators import admin_required
