@@ -3,11 +3,8 @@ FROM node:24-alpine AS builder
 
 WORKDIR /app
 
-# Accept build argument
-ARG PUBLIC_API_URL
-
-# Make it available during build
-ENV PUBLIC_API_URL=$PUBLIC_API_URL
+# Copy environment file before build (so build tools can access it)
+COPY .env .env
 
 # Install dependencies
 COPY package*.json ./
