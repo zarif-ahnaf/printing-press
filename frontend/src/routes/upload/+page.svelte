@@ -8,10 +8,8 @@
 		Zap,
 		FileCheck,
 		Trash2,
-		X,
 		Eye,
 		Users,
-		UserPlus,
 		ArrowLeft,
 		TriangleAlert
 	} from 'lucide-svelte';
@@ -22,8 +20,8 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Progress } from '$lib/components/ui/progress';
 	import { Dialog, DialogContent } from '$lib/components/ui/dialog';
-	import * as Select from '$lib/components/ui/select/index.js';
 	import { Badge } from '$lib/components/ui/badge';
+	import { NONBLANK_URL } from '$lib/constants/backend';
 
 	// Svelte 5 runes
 	let files = $state<PDFFile[]>([]);
@@ -109,7 +107,7 @@
 			formData.append('file', pdfFile.file);
 			formData.append('return_pdf', 'true');
 
-			const res = await fetch('/api/count/nonblank', {
+			const res = await fetch(NONBLANK_URL, {
 				method: 'POST',
 				body: formData
 			});
