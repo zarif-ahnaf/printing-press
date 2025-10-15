@@ -1,16 +1,15 @@
-from typing import List, Tuple
-from ninja import Router, File
+from ninja import Router, File, Form
 from ninja.files import UploadedFile
+from ninja.errors import HttpError
 from ..auth import AuthBearer
 from apps.queue.models import Queue
+from apps.wallet.models import Wallet, Transaction
 from django.db import transaction
-from ..http import HttpRequest
+from django.contrib.auth.models import User
 from decimal import Decimal
 from django.core.files.uploadedfile import SimpleUploadedFile
-
 from ..utils.pdf import count_pdf_pages
-
-from apps.wallet.models import Wallet, Transaction
+from ..http import HttpRequest
 
 router = Router(tags=["Queue"])
 
@@ -20,21 +19,34 @@ COST_PER_PAGE = Decimal("1.0")
 @router.post("", auth=AuthBearer())
 def queue_files(
     request: HttpRequest,
-    files: File[List[UploadedFile]],
+    files: File[list[UploadedFile]],
+    user_id: Form[int] | None = None,
 ):
+    current_user = request.auth
+
+    # Determine target user
+    if user_id is not None:
+        # Admin trying to specify a user
+        if not current_user.is_staff:
+            raise HttpError(403, "Only admins can specify a user_id.")
+        try:
+            target_user = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            raise HttpError(404, "User not found.")
+    else:
+        # Regular user uploading for themselves
+        target_user = current_user
+
     if not files:
         return {"message": "No files provided"}
 
-    user = request.auth
+    # Validate all files first (PDF + page count)
     total_pages = 0
-    file_data_list: List[
-        Tuple[str, bytes, int, Decimal]
-    ] = []  # (filename, content, page_count, cost)
+    file_data_list: list[tuple[str, bytes, int]] = []  # (filename, content, page_count)
 
-    # Step 1: Validate, count pages, and compute per-file cost
     for uploaded_file in files:
         filename = uploaded_file.name
-        if filename is None:
+        if not filename:
             return {"error": "Uploaded file has no name"}, 400
 
         if not filename.lower().endswith(".pdf"):
@@ -49,56 +61,76 @@ def queue_files(
         if num_pages == 0:
             return {"error": f"No valid pages found in {filename}"}, 400
 
-        file_cost = COST_PER_PAGE * num_pages
         total_pages += num_pages
-        file_data_list.append((filename, file_content, num_pages, file_cost))
+        file_data_list.append((filename, file_content, num_pages))
 
     if total_pages == 0:
         return {"error": "No valid pages found in uploaded files"}, 400
 
-    total_cost = COST_PER_PAGE * total_pages
+    # Decide whether to charge
+    is_admin_upload = user_id is not None  # i.e., admin acting on behalf of someone
 
-    # Step 2: Atomic transaction — validate balance, charge per file, create per-file transactions & queue items
     with transaction.atomic():
-        wallet = Wallet.objects.select_for_update().get_or_create(user=user)[0]
-
         queue_items = []
         transaction_records = []
 
-        for filename, content, num_pages, file_cost in file_data_list:
-            # Deduct this file's cost
-            try:
-                wallet.charge(
-                    file_cost,
-                    description=f"Queue {filename} - {num_pages} page(s) - {file_cost} BDT",
+        if not is_admin_upload:
+            # Non-admin: charge the current user (who is also target_user)
+            wallet = Wallet.objects.select_for_update().get_or_create(user=target_user)[
+                0
+            ]
+            total_cost = COST_PER_PAGE * total_pages
+
+            # Pre-check: can they afford it?
+            if wallet.balance < total_cost:
+                return {"error": "Insufficient wallet balance"}, 400
+
+            # Now charge per file (as in original logic)
+            for filename, content, num_pages in file_data_list:
+                file_cost = COST_PER_PAGE * num_pages
+                try:
+                    wallet.charge(
+                        file_cost,
+                        description=f"Queue {filename} - {num_pages} page(s) - {file_cost} BDT",
+                    )
+                except ValueError as e:
+                    return {"error": str(e)}, 400
+
+                transaction_records.append(
+                    Transaction(
+                        wallet=wallet,
+                        user=target_user,
+                        transaction_type="charge",
+                        amount=file_cost,
+                        description=f"Printed {filename} - {num_pages} pages - {file_cost} BDT",
+                    )
                 )
-            except ValueError as e:
-                return {"error": str(e)}, 400
 
-            # Create a transaction record for this file
-            transaction_records.append(
-                Transaction(
-                    wallet=wallet,
-                    user=user,
-                    transaction_type="charge",
-                    amount=file_cost,
-                    description=f"{filename} - page {num_pages} - price {file_cost}",
+                file_for_db = SimpleUploadedFile(
+                    name=filename, content=content, content_type="application/pdf"
                 )
-            )
+                queue_items.append(Queue(file=file_for_db, user=target_user))
 
-            # Prepare queue item
-            file_for_db = SimpleUploadedFile(
-                name=filename, content=content, content_type="application/pdf"
-            )
-            queue_items.append(Queue(file=file_for_db, user=user))
+            Transaction.objects.bulk_create(transaction_records)
 
-        # Bulk create all at once
-        Transaction.objects.bulk_create(transaction_records)
+        else:
+            # Admin upload: no charging, just queue for target_user
+            for filename, content, num_pages in file_data_list:
+                file_for_db = SimpleUploadedFile(
+                    name=filename, content=content, content_type="application/pdf"
+                )
+                queue_items.append(Queue(file=file_for_db, user=target_user))
+
+        # Create queue items in all cases
         created_items = Queue.objects.bulk_create(queue_items)
 
-    return {
+    response = {
         "message": f"{len(created_items)} file(s) queued successfully",
         "total_pages": total_pages,
-        "total_charged_bdt": str(total_cost),
         "queue_ids": [item.pk for item in created_items],
     }
+
+    if not is_admin_upload:
+        response["total_charged_bdt"] = str(COST_PER_PAGE * total_pages)
+
+    return response

@@ -90,46 +90,6 @@
 		}
 	}
 
-	async function optimizePDF(pdfFile: PDFFile) {
-		pdfFile.isOptimizing = true;
-		pdfFile.enqueueStatus = 'processing';
-
-		try {
-			const formData = new FormData();
-			formData.append('file', pdfFile.file);
-			formData.append('return_pdf', 'true');
-
-			const res = await fetch(NONBLANK_URL, {
-				method: 'POST',
-				body: formData
-			});
-
-			if (!res.ok) {
-				const errorText = await res.text();
-				throw new Error(errorText || 'Failed to process PDF');
-			}
-
-			const blob = await res.blob();
-			pdfFile.optimizedFile = new File([blob], `cleaned_${pdfFile.file.name}`, {
-				type: 'application/pdf'
-			});
-			pdfFile.enqueueStatus = 'success';
-			toast.success('Blank pages removed successfully!', {
-				description: `${pdfFile.file.name} processed`,
-				duration: 3000
-			});
-		} catch (error: any) {
-			pdfFile.enqueueStatus = 'error';
-			pdfFile.errorMessage = error.message;
-			toast.error('Failed to remove blank pages', {
-				description: error.message,
-				duration: 5000
-			});
-		} finally {
-			pdfFile.isOptimizing = false;
-		}
-	}
-
 	function downloadOptimized(pdfFile: PDFFile | null) {
 		if (!pdfFile?.optimizedFile) return;
 		const url = URL.createObjectURL(pdfFile.optimizedFile);
@@ -156,14 +116,10 @@
 	async function enqueuePDF(pdfFile: PDFFile, fileToSubmit: File) {
 		try {
 			const formData = new FormData();
-			formData.append('files', fileToSubmit); // Use the passed file instead of optimizedFile
-			let endpoint = QUEUE_URL;
-			let params = {};
+			formData.append('files', fileToSubmit);
 
 			if (isAdmin && selectedUserId !== null) {
 				formData.append('user_id', selectedUserId.toString());
-				endpoint = ADMIN_QUEUE_URL;
-				params = { user_id: selectedUserId };
 			}
 
 			const token = localStorage.getItem('token');
@@ -175,7 +131,7 @@
 			processingFiles = [...processingFiles, pdfFile.id];
 			pdfFile.enqueueStatus = 'processing';
 
-			const res = await fetch(endpoint, {
+			const res = await fetch(QUEUE_URL, {
 				method: 'POST',
 				headers,
 				body: formData
@@ -187,6 +143,10 @@
 			}
 
 			pdfFile.enqueueStatus = 'success';
+			toast.success('File enqueued successfully', {
+				description: pdfFile.file.name,
+				duration: 3000
+			});
 		} catch (error: any) {
 			pdfFile.enqueueStatus = 'error';
 			pdfFile.errorMessage = error.message;
@@ -207,11 +167,6 @@
 		}
 
 		isSubmitting = true;
-		const token = localStorage.getItem('token');
-		const headers: Record<string, string> = {};
-		if (token) {
-			headers.Authorization = `Bearer ${token}`;
-		}
 
 		const formData = new FormData();
 		filesToSubmit.forEach((pdfFile) => {
@@ -219,16 +174,21 @@
 			formData.append('files', fileToSubmit);
 		});
 
+		// Only add user_id if admin and selected
 		if (isAdmin && selectedUserId !== null) {
 			formData.append('user_id', selectedUserId.toString());
 		}
 
-		const endpoint = isAdmin && selectedUserId !== null ? ADMIN_QUEUE_URL : QUEUE_URL;
+		const token = localStorage.getItem('token');
+		const headers: Record<string, string> = {};
+		if (token) {
+			headers.Authorization = `Bearer ${token}`;
+		}
 
 		try {
-			const res = await fetch(endpoint, {
+			const res = await fetch(QUEUE_URL, {
 				method: 'POST',
-				headers, // Note: Don't set Content-Type with FormData — browser sets boundary
+				headers, // Let browser set Content-Type + boundary
 				body: formData
 			});
 
@@ -241,9 +201,8 @@
 					duration: 4000
 				});
 
-				goto('/dashboard');
+				goto('/transactions');
 			} else {
-				// Handle non-2xx response
 				const errorText = await res.text();
 				throw new Error(errorText || `Enqueue failed with status ${res.status}`);
 			}
