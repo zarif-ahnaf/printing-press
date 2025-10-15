@@ -33,15 +33,18 @@
 	let isAdmin = $state(true);
 	let isUserDropdownOpen = $state(false);
 	let selectedUserId: number | null = $state<number | null>(null);
-	let users = $state([
-		{ id: 1, name: 'John Doe', email: 'john@example.com', role: 'user' },
-		{ id: 2, name: 'Jane Smith', email: 'jane@example.com', role: 'user' },
-		{ id: 3, name: 'Robert Chen', email: 'robert@example.com', role: 'user' },
-		{ id: 4, name: 'Alex Morgan', email: 'alex@example.com', role: 'user' },
-		{ id: 5, name: 'System Admin', email: 'admin@example.com', role: 'admin' }
-	]);
+	let users = $state<APIUser[]>([]);
 	let userSearch = $state('');
 	let processingFiles = $state<string[]>([]);
+	let isLoadingUsers = $state(false);
+
+	interface APIUser {
+		id: number;
+		username: string;
+		email: string;
+		first_name: string;
+		last_name: string;
+	}
 
 	interface PDFFile {
 		id: string;
@@ -81,13 +84,48 @@
 		}
 	}
 
-	function getFilteredUsers() {
-		if (!userSearch) return users;
-		return users.filter(
-			(user) =>
-				user.name.toLowerCase().includes(userSearch.toLowerCase()) ||
-				user.email.toLowerCase().includes(userSearch.toLowerCase())
-		);
+	function getDisplayName(user: APIUser): string {
+		if (user.first_name || user.last_name) {
+			return `${user.first_name} ${user.last_name}`.trim();
+		}
+		return user.username;
+	}
+
+	async function fetchUsers(searchTerm: string = '') {
+		isLoadingUsers = true;
+		try {
+			const token = localStorage.getItem('token');
+			const headers: Record<string, string> = {};
+			if (token) {
+				headers.Authorization = `Bearer ${token}`;
+			}
+
+			let url = 'http://127.0.0.1:8000/api/users/';
+			if (searchTerm) {
+				const params = new URLSearchParams({ name: searchTerm });
+				url += `?${params.toString()}`;
+			}
+
+			const response = await fetch(url, {
+				method: 'GET',
+				headers
+			});
+
+			if (!response.ok) {
+				throw new Error(`Failed to fetch users: ${response.status} ${response.statusText}`);
+			}
+
+			const userData: APIUser[] = await response.json();
+			users = userData;
+		} catch (error: any) {
+			toast.error('Failed to load users', {
+				description: error.message || 'An unknown error occurred',
+				duration: 5000
+			});
+			console.error('Error fetching users:', error);
+		} finally {
+			isLoadingUsers = false;
+		}
 	}
 
 	async function convertFileToPDF(file: File): Promise<File> {
@@ -379,11 +417,24 @@
 		if (e.dataTransfer?.files) await handleFiles(e.dataTransfer.files);
 	}
 
+	// Handle user search input with debouncing
+	let searchTimeout: any;
+	function handleUserSearch() {
+		clearTimeout(searchTimeout);
+		searchTimeout = setTimeout(() => {
+			fetchUsers(userSearch);
+		}, 300); // 300ms debounce
+	}
+
 	onMount(() => {
+		// Fetch all users when component mounts
+		fetchUsers();
+
 		window.addEventListener('dragover', handleDragOver);
 		window.addEventListener('dragleave', handleDragLeave);
 		window.addEventListener('drop', handleDrop);
 		return () => {
+			clearTimeout(searchTimeout);
 			// Clean up all blob URLs
 			files.forEach((f) => {
 				if (f.previewUrl) {
@@ -417,7 +468,7 @@
 							type="text"
 							placeholder="Search users..."
 							bind:value={userSearch}
-							oninput={() => (isUserDropdownOpen = true)}
+							oninput={handleUserSearch}
 							onblur={() => setTimeout(() => (isUserDropdownOpen = false), 150)}
 							onkeydown={(e) => {
 								if (e.key === 'Escape') {
@@ -426,30 +477,32 @@
 							}}
 							class="pr-8"
 						/>
-						{#if isUserDropdownOpen && userSearch}
+						{#if userSearch && (isUserDropdownOpen || isLoadingUsers)}
 							<div
 								class="absolute top-full z-50 mt-1 w-full animate-in rounded-md border bg-popover text-popover-foreground shadow-md fade-in-0 outline-none zoom-in-95"
 							>
-								{#if getFilteredUsers().length === 0}
+								{#if isLoadingUsers}
+									<div class="px-3 py-2 text-sm text-muted-foreground">Loading...</div>
+								{:else if users.length === 0}
 									<div class="px-3 py-2 text-sm text-muted-foreground">No users found</div>
 								{:else}
-									{#each getFilteredUsers() as user}
+									{#each users as user}
 										<button
 											type="button"
 											class="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-sm select-none hover:bg-accent hover:text-accent-foreground"
 											onclick={() => {
 												selectedUserId = user.id;
-												userSearch = user.name;
+												userSearch = getDisplayName(user);
 												isUserDropdownOpen = false;
 											}}
 										>
 											<div
-												class="mr-2 h-2 w-2 rounded-full {user.role === 'admin'
+												class="mr-2 h-2 w-2 rounded-full {user.id === 1
 													? 'bg-primary'
 													: 'bg-muted-foreground'}"
 											></div>
 											<div class="flex flex-col">
-												<span>{user.name}</span>
+												<span>{getDisplayName(user)}</span>
 												<span class="text-xs text-muted-foreground">{user.email}</span>
 											</div>
 										</button>
@@ -706,7 +759,7 @@
 							<span class="max-w-xs truncate font-medium">{pdf.file.name}</span>
 							{#if isAdmin && selectedUserId !== null}
 								<Badge variant="outline" class="ml-2">
-									{users.find((u) => u.id === selectedUserId)?.name}
+									{getDisplayName(users.find((u) => u.id === selectedUserId)!)}
 								</Badge>
 							{/if}
 						</div>

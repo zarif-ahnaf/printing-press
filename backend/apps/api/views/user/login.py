@@ -8,7 +8,7 @@ from ...schemas.login import LoginInSchema, LoginOutSchema
 router = Router(tags=["User"])
 
 
-@router.post("/login", response=LoginOutSchema)
+@router.post("", response=LoginOutSchema)
 def post_user_login_info(request: HttpRequest, payload: LoginInSchema) -> Token:
     user = authenticate(request, username=payload.username, password=payload.password)
 

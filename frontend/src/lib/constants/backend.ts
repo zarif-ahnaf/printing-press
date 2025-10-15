@@ -7,3 +7,4 @@ export var BALANCE_URL = `${API_URL}/balance/`;
 export var NONBLANK_URL = `${API_URL}/convert/nonblank/`;
 export var QUEUE_URL = `${API_URL}/queue/`;
 export var PDF_CONVERT_URL = `${API_URL}/convert/pdf/`;
+export var ALL_USER_ENDPOINT = `${API_URL}/users/`;

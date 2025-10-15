@@ -8,7 +8,7 @@ from ...http import HttpRequest
 router = Router(tags=["User"])
 
 
-@router.delete("/logout", auth=AuthBearer())
+@router.delete("", auth=AuthBearer())
 def post_user_logout_info(request: HttpRequest) -> HttpResponse:
     token: Token = Token.objects.get(user=request.auth)
     token.delete()
