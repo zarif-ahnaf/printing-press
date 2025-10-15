@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
+	import { v4 as uuidv4, v4 } from 'uuid';
 	import {
 		Upload,
 		FileText,
@@ -162,7 +163,7 @@
 	async function handleFiles(fileList: FileList) {
 		for (const file of Array.from(fileList)) {
 			const newFileEntry: PDFFile = {
-				id: crypto.randomUUID(),
+				id: v4(),
 				file,
 				optimizedFile: null,
 				isOptimizing: false,
