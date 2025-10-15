@@ -19,8 +19,6 @@ class Wallet(models.Model):
 
     def charge(self, amount, description=""):
         amount = Decimal(amount)
-        if self.balance < amount:
-            raise ValueError("Insufficient funds")
         self.balance -= amount
         self.save()
 
@@ -36,7 +34,7 @@ class Transaction(models.Model):
     transaction_type = models.CharField(max_length=10, choices=TRANSACTION_TYPES)
     amount = models.DecimalField(max_digits=12, decimal_places=2)
     description = models.TextField(blank=True)
-    
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
