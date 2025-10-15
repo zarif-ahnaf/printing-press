@@ -21,7 +21,8 @@
 	import { Progress } from '$lib/components/ui/progress';
 	import { Dialog, DialogContent } from '$lib/components/ui/dialog';
 	import { Badge } from '$lib/components/ui/badge';
-	import { NONBLANK_URL } from '$lib/constants/backend';
+	import { ADMIN_QUEUE_URL, NONBLANK_URL, QUEUE_URL } from '$lib/constants/backend';
+	import { goto } from '$app/navigation';
 
 	// Svelte 5 runes
 	let files = $state<PDFFile[]>([]);
@@ -76,16 +77,7 @@
 				continue;
 			}
 
-			// Check for duplicate file names
-			const duplicate = files.find((f) => f.file.name === file.name);
-			if (duplicate) {
-				const result = confirm(
-					`A file named "${file.name}" already exists. Do you want to replace it?`
-				);
-				if (!result) continue;
-				deleteFile(duplicate);
-			}
-
+			// Allow multiple uploads of the same file - no duplicate check
 			files.push({
 				id: crypto.randomUUID(),
 				file,
@@ -161,16 +153,16 @@
 		});
 	}
 
-	async function enqueuePDF(pdfFile: PDFFile) {
+	async function enqueuePDF(pdfFile: PDFFile, fileToSubmit: File) {
 		try {
 			const formData = new FormData();
-			formData.append('file', pdfFile.optimizedFile!);
-			let endpoint = '/api/queue/';
+			formData.append('files', fileToSubmit); // Use the passed file instead of optimizedFile
+			let endpoint = QUEUE_URL;
 			let params = {};
 
 			if (isAdmin && selectedUserId !== null) {
 				formData.append('user_id', selectedUserId.toString());
-				endpoint = '/api/admin/queue/';
+				endpoint = ADMIN_QUEUE_URL;
 				params = { user_id: selectedUserId };
 			}
 
@@ -195,10 +187,6 @@
 			}
 
 			pdfFile.enqueueStatus = 'success';
-			toast.success('File enqueued successfully!', {
-				description: pdfFile.file.name,
-				duration: 3000
-			});
 		} catch (error: any) {
 			pdfFile.enqueueStatus = 'error';
 			pdfFile.errorMessage = error.message;
@@ -212,9 +200,9 @@
 	}
 
 	async function submitAll() {
-		const cleaned = files.filter((f) => f.optimizedFile && f.enqueueStatus !== 'success');
-		if (cleaned.length === 0) {
-			toast.info('No cleaned PDFs to enqueue');
+		const filesToSubmit = files.filter((f) => f.enqueueStatus !== 'success');
+		if (filesToSubmit.length === 0) {
+			toast.info('No files to enqueue');
 			return;
 		}
 
@@ -225,33 +213,48 @@
 			headers.Authorization = `Bearer ${token}`;
 		}
 
-		const results = await Promise.all(
-			cleaned.map(async (pdfFile) => {
-				try {
-					await enqueuePDF(pdfFile);
-					return { success: true, name: pdfFile.file.name };
-				} catch (error) {
-					return {
-						success: false,
-						name: pdfFile.file.name,
-						error: error instanceof Error ? error.message : 'Unknown error'
-					};
-				}
-			})
-		);
+		const formData = new FormData();
+		filesToSubmit.forEach((pdfFile) => {
+			const fileToSubmit = pdfFile.optimizedFile ?? pdfFile.file;
+			formData.append('files', fileToSubmit);
+		});
 
-		const successes = results.filter((r) => r.success);
-		const failures = results.filter((r) => !r.success);
-
-		if (successes.length > 0) {
-			toast.success(`${successes.length} file(s) enqueued successfully`, {
-				description:
-					failures.length > 0 ? `${failures.length} file(s) failed to enqueue` : undefined,
-				duration: 4000
-			});
+		if (isAdmin && selectedUserId !== null) {
+			formData.append('user_id', selectedUserId.toString());
 		}
 
-		isSubmitting = false;
+		const endpoint = isAdmin && selectedUserId !== null ? ADMIN_QUEUE_URL : QUEUE_URL;
+
+		try {
+			const res = await fetch(endpoint, {
+				method: 'POST',
+				headers, // Note: Don't set Content-Type with FormData — browser sets boundary
+				body: formData
+			});
+
+			if (res.ok) {
+				filesToSubmit.forEach((pdfFile) => {
+					pdfFile.enqueueStatus = 'success';
+				});
+
+				toast.success(`${filesToSubmit.length} file(s) enqueued successfully`, {
+					duration: 4000
+				});
+
+				goto('/dashboard');
+			} else {
+				// Handle non-2xx response
+				const errorText = await res.text();
+				throw new Error(errorText || `Enqueue failed with status ${res.status}`);
+			}
+		} catch (error: any) {
+			toast.error('Enqueue failed', {
+				description: error.message || 'An unknown error occurred',
+				duration: 5000
+			});
+		} finally {
+			isSubmitting = false;
+		}
 	}
 
 	function openPdfDialog(pdf: PDFFile) {
@@ -480,9 +483,9 @@
 							onclick={async (e) => {
 								e.stopPropagation();
 								if (pdfFile.optimizedFile) {
-									await enqueuePDF(pdfFile);
+									await enqueuePDF(pdfFile, pdfFile.optimizedFile);
 								} else {
-									await optimizePDF(pdfFile);
+									await enqueuePDF(pdfFile, pdfFile.file);
 								}
 							}}
 						>
@@ -522,7 +525,11 @@
 
 		<!-- Submit Button -->
 		<div class="mt-8 flex justify-end">
-			<Button size="lg" disabled={isSubmitting} onclick={async () => await submitAll()}>
+			<Button
+				size="lg"
+				disabled={isSubmitting || files.length === 0}
+				onclick={async () => await submitAll()}
+			>
 				{#if isSubmitting}
 					<span class="flex items-center gap-2">
 						<Progress class="h-2 w-16" value={50} />
@@ -530,7 +537,7 @@
 					</span>
 				{:else}
 					<Zap class="mr-2 h-4 w-4" />
-					Enqueue All Cleaned PDFs
+					Enqueue All PDFs
 				{/if}
 			</Button>
 		</div>

@@ -4,7 +4,7 @@ from django.contrib.auth.models import User
 
 
 class Queue(models.Model):
-    file = models.FileField(upload_to="uploads/")
+    file = models.FileField()
     processed = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 

@@ -72,3 +72,30 @@ def process_pdf_file(
     finally:
         if not doc.is_closed:
             doc.close()
+
+
+def count_pdf_pages(file_content: bytes, filename: str) -> int:
+    """
+    Count the number of pages in a PDF file given its raw bytes.
+
+    Args:
+        file_content (bytes): Raw content of the PDF file.
+        filename (str): Name of the file (used for error context).
+
+    Returns:
+        int: Number of pages in the PDF.
+
+    Raises:
+        ValueError: If the file is not a valid PDF or has no pages.
+    """
+    try:
+        doc = fitz.open(stream=file_content, filetype="pdf")
+        num_pages = doc.page_count
+        doc.close()
+    except Exception as e:
+        raise ValueError(f"Invalid PDF {filename}: {str(e)}")
+
+    if num_pages <= 0:
+        raise ValueError(f"PDF {filename} contains no pages")
+
+    return num_pages
