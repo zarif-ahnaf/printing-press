@@ -1,12 +1,12 @@
 from ninja import Router, File, Form
 from ninja.files import UploadedFile
 from django.http import HttpResponse, Http404
-from ..utils.pdf import process_pdf_file
+from ...utils.pdf import process_pdf_file
 
 router = Router(tags=["PDF"])
 
 
-@router.post("/nonblank")
+@router.post("")
 def count_nonblank_pages(
     request,
     file: File[UploadedFile],

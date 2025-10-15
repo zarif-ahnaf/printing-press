@@ -21,7 +21,7 @@
 	import { Progress } from '$lib/components/ui/progress';
 	import { Dialog, DialogContent } from '$lib/components/ui/dialog';
 	import { Badge } from '$lib/components/ui/badge';
-	import { ADMIN_QUEUE_URL, NONBLANK_URL, QUEUE_URL } from '$lib/constants/backend';
+	import { NONBLANK_URL, QUEUE_URL, PDF_CONVERT_URL } from '$lib/constants/backend';
 	import { goto } from '$app/navigation';
 
 	// Svelte 5 runes
@@ -51,6 +51,8 @@
 		nonBlankCount: number | null;
 		enqueueStatus: 'idle' | 'processing' | 'success' | 'error';
 		errorMessage: string | null;
+		isConverting: boolean;
+		isCurrentlyOptimized: boolean; // New: tracks if currently viewing optimized version
 	}
 
 	function formatFileSize(bytes: number): string {
@@ -70,23 +72,72 @@
 		);
 	}
 
+	async function convertFileToPDF(file: File): Promise<File> {
+		const formData = new FormData();
+		formData.append('file', file);
+
+		const token = localStorage.getItem('token');
+		const headers: Record<string, string> = {};
+		if (token) {
+			headers.Authorization = `Bearer ${token}`;
+		}
+
+		const response = await fetch(PDF_CONVERT_URL, {
+			method: 'POST',
+			headers,
+			body: formData
+		});
+
+		if (!response.ok) {
+			throw new Error(`Failed to convert ${file.name} to PDF`);
+		}
+
+		const blob = await response.blob();
+		return new File([blob], file.name.replace(/\.[^/.]+$/, '.pdf'), {
+			type: 'application/pdf'
+		});
+	}
+
 	async function handleFiles(fileList: FileList) {
 		for (const file of Array.from(fileList)) {
-			if (file.type !== 'application/pdf') {
-				toast.error('Only PDF files are supported');
-				continue;
-			}
-
-			// Allow multiple uploads of the same file - no duplicate check
-			files.push({
+			const newFileEntry: PDFFile = {
 				id: crypto.randomUUID(),
 				file,
 				optimizedFile: null,
 				isOptimizing: false,
 				nonBlankCount: null,
 				enqueueStatus: 'idle',
-				errorMessage: null
-			});
+				errorMessage: null,
+				isConverting: false,
+				isCurrentlyOptimized: false // Start with unoptimized view
+			};
+
+			if (file.type !== 'application/pdf') {
+				// Automatically convert non-PDF files to PDF
+				newFileEntry.isConverting = true;
+				files.push(newFileEntry);
+
+				try {
+					const convertedPDF = await convertFileToPDF(file);
+					newFileEntry.file = convertedPDF;
+					newFileEntry.isConverting = false;
+					toast.success('File converted to PDF', {
+						description: file.name,
+						duration: 2000
+					});
+				} catch (error: any) {
+					newFileEntry.isConverting = false;
+					newFileEntry.errorMessage = error.message;
+					newFileEntry.enqueueStatus = 'error';
+					toast.error('Conversion failed', {
+						description: error.message,
+						duration: 5000
+					});
+				}
+			} else {
+				// PDF file - add directly
+				files.push(newFileEntry);
+			}
 		}
 	}
 
@@ -170,7 +221,10 @@
 
 		const formData = new FormData();
 		filesToSubmit.forEach((pdfFile) => {
-			const fileToSubmit = pdfFile.optimizedFile ?? pdfFile.file;
+			const fileToSubmit =
+				pdfFile.optimizedFile && pdfFile.isCurrentlyOptimized
+					? pdfFile.optimizedFile
+					: pdfFile.file;
 			formData.append('files', fileToSubmit);
 		});
 
@@ -188,7 +242,7 @@
 		try {
 			const res = await fetch(QUEUE_URL, {
 				method: 'POST',
-				headers, // Let browser set Content-Type + boundary
+				headers,
 				body: formData
 			});
 
@@ -213,6 +267,61 @@
 			});
 		} finally {
 			isSubmitting = false;
+		}
+	}
+
+	async function optimizeFile(pdfFile: PDFFile) {
+		try {
+			pdfFile.isOptimizing = true;
+
+			// Count non-blank pages and get cleaned PDF
+			const formData = new FormData();
+			formData.append('file', pdfFile.file);
+			formData.append('return_pdf', 'true');
+
+			const token = localStorage.getItem('token');
+			const headers: Record<string, string> = {};
+			if (token) {
+				headers.Authorization = `Bearer ${token}`;
+			}
+
+			const response = await fetch(NONBLANK_URL, {
+				method: 'POST',
+				headers,
+				body: formData
+			});
+
+			if (!response.ok) {
+				throw new Error(`Failed to process ${pdfFile.file.name}`);
+			}
+
+			const blob = await response.blob();
+			const optimizedFile = new File([blob], `cleaned_${pdfFile.file.name}`, {
+				type: 'application/pdf'
+			});
+
+			pdfFile.optimizedFile = optimizedFile;
+
+			toast.success('File optimized successfully', {
+				description: pdfFile.file.name,
+				duration: 3000
+			});
+		} catch (error: any) {
+			toast.error('Optimization failed', {
+				description: error.message || 'An unknown error occurred',
+				duration: 5000
+			});
+		} finally {
+			pdfFile.isOptimizing = false;
+		}
+	}
+
+	function toggleOptimizationView(pdfFile: PDFFile) {
+		if (pdfFile.optimizedFile) {
+			pdfFile.isCurrentlyOptimized = !pdfFile.isCurrentlyOptimized;
+		} else {
+			// If not optimized yet, trigger optimization
+			optimizeFile(pdfFile);
 		}
 	}
 
@@ -255,7 +364,7 @@
 	<header class="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between">
 		<div>
 			<h1 class="text-3xl font-bold">PDF Cleaner</h1>
-			<p class="mt-1 text-muted-foreground">Upload PDFs and remove blank pages instantly</p>
+			<p class="mt-1 text-muted-foreground">Upload files and remove blank pages instantly</p>
 		</div>
 
 		{#if isAdmin}
@@ -319,7 +428,7 @@
 	<!-- Upload Area -->
 	<Card class="mb-8">
 		<CardHeader>
-			<CardTitle>Upload PDFs</CardTitle>
+			<CardTitle>Upload Files</CardTitle>
 		</CardHeader>
 		<CardContent>
 			<Label
@@ -337,12 +446,11 @@
 				}}
 			>
 				<Upload class="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
-				<p class="font-medium">Drag & drop PDFs here</p>
-				<p class="mt-1 text-sm text-muted-foreground">or click to browse files</p>
+				<p class="font-medium">Drag & drop files here</p>
+				<p class="mt-1 text-sm text-muted-foreground">or click to browse files (PDF, DOCX, etc.)</p>
 				<Input
 					id="file-upload"
 					type="file"
-					accept=".pdf"
 					multiple
 					class="hidden"
 					onchange={async (e) => {
@@ -358,7 +466,7 @@
 	{#if files.length === 0}
 		<div class="py-16 text-center">
 			<FileText class="mx-auto mb-4 h-16 w-16 text-muted-foreground" />
-			<p class="text-muted-foreground">Upload PDFs to get started</p>
+			<p class="text-muted-foreground">Upload files to get started</p>
 		</div>
 	{:else}
 		<div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -369,7 +477,11 @@
 					{pdfFile.enqueueStatus === 'error' ? 'border-destructive/50' : ''}"
 				>
 					<!-- Status Indicator -->
-					{#if pdfFile.enqueueStatus === 'processing'}
+					{#if pdfFile.isConverting}
+						<div class="absolute top-2 left-2 z-10">
+							<div class="h-3 w-3 animate-pulse rounded-full bg-blue-500"></div>
+						</div>
+					{:else if pdfFile.enqueueStatus === 'processing'}
 						<div class="absolute top-2 left-2 z-10">
 							<div class="h-3 w-3 animate-pulse rounded-full bg-primary"></div>
 						</div>
@@ -386,13 +498,17 @@
 					<!-- Thumbnail -->
 					<div class="relative aspect-[3/4] w-full bg-muted">
 						<embed
-							src={URL.createObjectURL(pdfFile.optimizedFile ?? pdfFile.file)}
+							src={URL.createObjectURL(
+								pdfFile.optimizedFile && pdfFile.isCurrentlyOptimized
+									? pdfFile.optimizedFile
+									: pdfFile.file
+							)}
 							type="application/pdf"
 							class="h-full w-full cursor-pointer object-cover transition-opacity
-								{pdfFile.isOptimizing ? 'opacity-50' : 'opacity-100'}"
+								{pdfFile.isOptimizing || pdfFile.isConverting ? 'opacity-50' : 'opacity-100'}"
 							onclick={() => openPdfDialog(pdfFile)}
 						/>
-						{#if pdfFile.isOptimizing}
+						{#if pdfFile.isOptimizing || pdfFile.isConverting}
 							<div class="absolute inset-0 flex items-center justify-center bg-black/20">
 								<Progress class="h-1.5 w-12" value={50} />
 							</div>
@@ -408,7 +524,7 @@
 						</div>
 					{/if}
 
-					<!-- Hover action bar: Delete | Preview | Optimize -->
+					<!-- Hover action bar: Delete | Preview | Toggle Optimization -->
 					<div
 						class="absolute right-0 bottom-0 left-0 flex justify-between bg-background/90 p-2 opacity-0 backdrop-blur transition-opacity group-hover:opacity-100"
 					>
@@ -438,18 +554,18 @@
 							variant="ghost"
 							size="icon"
 							class="h-7 w-7"
-							disabled={pdfFile.isOptimizing || pdfFile.enqueueStatus === 'processing'}
+							disabled={pdfFile.isOptimizing ||
+								pdfFile.isConverting ||
+								pdfFile.enqueueStatus === 'processing'}
 							onclick={async (e) => {
 								e.stopPropagation();
-								if (pdfFile.optimizedFile) {
-									await enqueuePDF(pdfFile, pdfFile.optimizedFile);
-								} else {
-									await enqueuePDF(pdfFile, pdfFile.file);
-								}
+								toggleOptimizationView(pdfFile);
 							}}
 						>
-							{#if pdfFile.isOptimizing || pdfFile.enqueueStatus === 'processing'}
+							{#if pdfFile.isOptimizing || pdfFile.isConverting}
 								<Progress class="h-1 w-6" value={50} />
+							{:else if pdfFile.optimizedFile && pdfFile.isCurrentlyOptimized}
+								<Zap class="h-3.5 w-3.5 fill-primary text-primary" />
 							{:else if pdfFile.optimizedFile}
 								<Zap class="h-3.5 w-3.5 text-primary" />
 							{:else}
@@ -462,9 +578,19 @@
 					<div class="p-3">
 						<p class="truncate text-sm font-medium">{pdfFile.file.name}</p>
 						<div class="mt-1 flex items-center justify-between">
-							<p class="text-xs text-muted-foreground">{formatFileSize(pdfFile.file.size)}</p>
+							<p class="text-xs text-muted-foreground">
+								{formatFileSize(
+									pdfFile.optimizedFile && pdfFile.isCurrentlyOptimized
+										? pdfFile.optimizedFile.size
+										: pdfFile.file.size
+								)}
+							</p>
 							{#if pdfFile.optimizedFile}
-								<Badge variant="secondary" class="text-xs">Cleaned</Badge>
+								{#if pdfFile.isCurrentlyOptimized}
+									<Badge variant="secondary" class="text-xs">Cleaned</Badge>
+								{:else}
+									<Badge variant="outline" class="text-xs">Original</Badge>
+								{/if}
 							{/if}
 						</div>
 
@@ -496,7 +622,7 @@
 					</span>
 				{:else}
 					<Zap class="mr-2 h-4 w-4" />
-					Enqueue All PDFs
+					Enqueue All Files
 				{/if}
 			</Button>
 		</div>
@@ -504,84 +630,103 @@
 
 	<!-- PDF Preview Dialog -->
 	{#if selectedPdf}
-		<Dialog
-			open={isDialogOpen}
-			onOpenChange={(open) => {
-				isDialogOpen = open;
-				if (!open) selectedPdf = null;
-			}}
-		>
-			<DialogContent
-				class="flex h-[90vh] w-[95vw] flex-col overflow-hidden rounded-xl border-0 p-0 shadow-2xl"
+		<!-- Create a local variable that TypeScript knows is non-null -->
+		{#each [selectedPdf] as pdf (pdf.id)}
+			<Dialog
+				open={isDialogOpen}
+				onOpenChange={(open) => {
+					isDialogOpen = open;
+					if (!open) selectedPdf = null;
+				}}
 			>
-				<!-- Top Bar -->
-				<div class="flex items-center justify-between border-b bg-background px-6 py-4">
-					<div class="flex items-center gap-2">
-						<Button
-							variant="ghost"
-							size="icon"
-							class="h-8 w-8"
-							onclick={() => {
-								isDialogOpen = false;
-								selectedPdf = null;
-							}}
-						>
-							<ArrowLeft class="h-4 w-4" />
-						</Button>
-						<FileText class="h-5 w-5 text-muted-foreground" />
-						<span class="max-w-xs truncate font-medium">{selectedPdf.file.name}</span>
-						{#if isAdmin && selectedUserId !== null}
-							<Badge variant="outline" class="ml-2">
-								{users.find((u) => u.id === selectedUserId)?.name}
-							</Badge>
-						{/if}
-					</div>
-					<div class="flex gap-2 p-5">
-						{#if selectedPdf.optimizedFile}
-							<Button variant="outline" size="sm" onclick={() => downloadOptimized(selectedPdf)}>
-								<Download class="mr-1.5 h-4 w-4" />
-								Download
+				<DialogContent
+					class="flex h-[90vh] w-[95vw] flex-col overflow-hidden rounded-xl border-0 p-0 shadow-2xl"
+				>
+					<!-- Top Bar -->
+					<div class="flex items-center justify-between border-b bg-background px-6 py-4">
+						<div class="flex items-center gap-2">
+							<Button
+								variant="ghost"
+								size="icon"
+								class="h-8 w-8"
+								onclick={() => {
+									isDialogOpen = false;
+									selectedPdf = null;
+								}}
+							>
+								<ArrowLeft class="h-4 w-4" />
 							</Button>
-						{/if}
-						<Button
-							variant="outline"
-							size="sm"
-							onclick={() => {
-								window.open(
-									URL.createObjectURL(selectedPdf!.optimizedFile ?? selectedPdf!.file),
-									'_blank'
-								);
-							}}
+							<FileText class="h-5 w-5 text-muted-foreground" />
+							<span class="max-w-xs truncate font-medium">{pdf.file.name}</span>
+							{#if isAdmin && selectedUserId !== null}
+								<Badge variant="outline" class="ml-2">
+									{users.find((u) => u.id === selectedUserId)?.name}
+								</Badge>
+							{/if}
+						</div>
+						<div class="flex gap-2 p-5">
+							{#if pdf.optimizedFile}
+								<Button variant="outline" size="sm" onclick={() => downloadOptimized(pdf)}>
+									<Download class="mr-1.5 h-4 w-4" />
+									Download
+								</Button>
+								<Button
+									variant="outline"
+									size="sm"
+									onclick={() => {
+										pdf.isCurrentlyOptimized = !pdf.isCurrentlyOptimized;
+									}}
+								>
+									{pdf.isCurrentlyOptimized ? 'Show Original' : 'Show Cleaned'}
+								</Button>
+							{/if}
+							<Button
+								variant="outline"
+								size="sm"
+								onclick={() => {
+									const fileToOpen =
+										pdf.optimizedFile && pdf.isCurrentlyOptimized ? pdf.optimizedFile : pdf.file;
+									window.open(URL.createObjectURL(fileToOpen), '_blank');
+								}}
+							>
+								Open in new tab
+							</Button>
+						</div>
+					</div>
+
+					<!-- PDF Viewer Area -->
+					<div class="flex flex-1 overflow-hidden bg-muted/30">
+						<iframe
+							title="pdf"
+							src={URL.createObjectURL(
+								pdf.optimizedFile && pdf.isCurrentlyOptimized ? pdf.optimizedFile : pdf.file
+							) + '#toolbar=0&navpanes=0&scrollbar=0&zoom=55'}
+							class="h-full w-full border-0"
+							frameborder="0"
+						></iframe>
+					</div>
+
+					<!-- Status Bar -->
+					{#if pdf.optimizedFile}
+						<div
+							class="flex justify-between border-t bg-background px-6 py-3 text-xs text-muted-foreground"
 						>
-							Open in new tab
-						</Button>
-					</div>
-				</div>
-
-				<!-- PDF Viewer Area -->
-				<div class="flex flex-1 overflow-hidden bg-muted/30">
-					<iframe
-						title="pdf"
-						src={URL.createObjectURL(selectedPdf.optimizedFile ?? selectedPdf.file) +
-							'#toolbar=0&navpanes=0&scrollbar=0&zoom=55'}
-						class="h-full w-full border-0"
-						frameborder="0"
-					></iframe>
-				</div>
-
-				<!-- Status Bar -->
-				{#if selectedPdf.optimizedFile}
-					<div
-						class="flex justify-between border-t bg-background px-6 py-3 text-xs text-muted-foreground"
-					>
-						<span class="flex items-center gap-1">
-							<FileCheck class="text-success h-3 w-3" />
-							Cleaned PDF • Blank pages removed
-						</span>
-						<span>{formatFileSize(selectedPdf.optimizedFile.size)}</span>
-					</div>
-				{/if}
-			</DialogContent>
-		</Dialog>
+							<span class="flex items-center gap-1">
+								{#if pdf.isCurrentlyOptimized}
+									<FileCheck class="text-success h-3 w-3" />
+									Cleaned PDF • Blank pages removed
+								{:else}
+									<FileText class="h-3 w-3 text-muted-foreground" />
+									Original PDF
+								{/if}
+							</span>
+							<span>
+								{formatFileSize(pdf.isCurrentlyOptimized ? pdf.optimizedFile!.size : pdf.file.size)}
+							</span>
+						</div>
+					{/if}
+				</DialogContent>
+			</Dialog>
+		{/each}
 	{/if}
 </div>
