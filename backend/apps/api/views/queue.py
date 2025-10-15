@@ -80,11 +80,10 @@ def queue_files(
             wallet = Wallet.objects.select_for_update().get_or_create(user=target_user)[
                 0
             ]
-            total_cost = COST_PER_PAGE * total_pages
-
-            # Pre-check: can they afford it?
-            if wallet.balance < total_cost:
-                raise HttpError(400, "Insufficient wallet balance")
+            # total_cost = COST_PER_PAGE * total_pages
+            # # Pre-check: can they afford it?
+            # if wallet.balance < total_cost:
+            #     raise HttpError(400, "Insufficient wallet balance")
 
             # Now charge per file
             for filename, content, num_pages in file_data_list:
