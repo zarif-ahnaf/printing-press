@@ -5,3 +5,6 @@ from django.contrib.auth.models import User
 
 class HttpRequest(DjangoHttpRequest):
     auth: User | AnonymousUser
+
+
+__all__ = ["HttpRequest"]

@@ -3,13 +3,14 @@ from ninja.files import UploadedFile
 from django.http import HttpResponse
 import tempfile
 from pathlib import Path
-from loutils.doc2pdf import doc2pdf
+from ....utils.docx import doc2pdf
+from ....http import HttpRequest
 
 router = Router(tags=["PDF"])
 
 
 @router.post("/convert")
-def convert_docx_to_pdf_endpoint(request, file: File[UploadedFile]):
+def convert_docx_to_pdf_endpoint(request: HttpRequest, file: File[UploadedFile]):
     # Use a default filename if none is provided
     filename = file.name or "temp.docx"
 
