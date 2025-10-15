@@ -1,6 +1,7 @@
-import { PUBLIC_API_URL } from '$env/static/public';
+import * as publicEnv from '$env/static/public';
 
-const BACKEND_URL = PUBLIC_API_URL || 'http://localhost:8000';
+// @ts-expect-error: I know what I'm doing
+const BACKEND_URL = publicEnv.PUBLIC_API_URL ?? 'http://localhost:8000';
 const API_URL = `${BACKEND_URL}/api`;
 
 export var LOGIN_URL = `${API_URL}/user/login/`;
