@@ -57,6 +57,8 @@ COPY --from=builder /app /app
 EXPOSE 8000/tcp 8000/udp
 
 # Verify
+
 RUN libreoffice --version && fc-list | wc -l && fc-list : family | sort -u | head -n 30
 
+# Ensure our venv is first in PATH
 ENV PATH="/app/.venv/bin:$PATH"
