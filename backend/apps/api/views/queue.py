@@ -10,6 +10,7 @@ from decimal import Decimal
 from django.core.files.uploadedfile import SimpleUploadedFile
 from ..utils.pdf import count_pdf_pages
 from ..http import HttpRequest
+from django.shortcuts import get_object_or_404
 
 router = Router(tags=["Queue"])
 
@@ -70,7 +71,9 @@ def queue_files(
         queue_items = []
         transaction_records = []
 
-        wallet = Wallet.objects.select_for_update().get_or_create(user=target_user)[0]
+        wallet, _ = Wallet.objects.select_for_update().get_or_create(
+            user=target_user, defaults={"balance": Decimal("0.00")}
+        )
         # total_cost = COST_PER_PAGE * total_pages
         # # Pre-check: can they afford it?
         # if wallet.balance < total_cost:
@@ -115,3 +118,78 @@ def queue_files(
     }
 
     return response
+
+
+@router.get("", auth=AuthBearer(), summary="List queued files")
+def list_queue(
+    request: HttpRequest,
+    include_processed: bool = False,
+):
+    """
+    Fetch all queued files for the current user.
+    Admins can optionally see all users' queues (not implemented below for simplicity;
+    extend with `?all=true` if needed).
+    """
+    current_user = request.auth
+    queryset = Queue.objects.filter(user=current_user)
+
+    if not include_processed:
+        queryset = queryset.filter(processed=False)
+
+    items = [
+        {
+            "id": item.pk,
+            "filename": item.file.name.split("/")[-1],
+            "processed": item.processed,
+            "created_at": item.created_at.isoformat(),
+        }
+        for item in queryset
+    ]
+
+    return {"queue": items}
+
+
+@router.post(
+    "/{queue_id}/processed", auth=AuthBearer(), summary="Mark file as processed"
+)
+def mark_as_processed(
+    request: HttpRequest,
+    queue_id: int,
+):
+    current_user = request.auth
+    queue_item = get_object_or_404(Queue, id=queue_id)
+
+    if queue_item.user != current_user and not current_user.is_staff:
+        raise HttpError(403, "You cannot modify this queue item.")
+
+    queue_item.processed = True
+    queue_item.save(update_fields=["processed", "updated_at"])
+
+    return {
+        "id": queue_item.pk,
+        "processed": True,
+        "message": "File marked as processed.",
+    }
+
+
+@router.delete(
+    "/{queue_id}/processed", auth=AuthBearer(), summary="Mark file as unprocessed"
+)
+def mark_as_unprocessed(
+    request: HttpRequest,
+    queue_id: int,
+):
+    current_user = request.auth
+    queue_item = get_object_or_404(Queue, id=queue_id)
+
+    if queue_item.user != current_user and not current_user.is_staff:
+        raise HttpError(403, "You cannot modify this queue item.")
+
+    queue_item.processed = False
+    queue_item.save(update_fields=["processed", "updated_at"])
+
+    return {
+        "id": queue_item.pk,
+        "processed": False,
+        "message": "File marked as unprocessed.",
+    }
