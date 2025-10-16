@@ -32,7 +32,6 @@ def queue_files(
             target_user = User.objects.get(id=user_id)
         except User.DoesNotExist:
             raise HttpError(404, "User not found.")
-        print("hello")
     else:
         # Regular user uploading for themselves
         target_user = current_user
