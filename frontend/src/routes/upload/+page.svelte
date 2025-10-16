@@ -13,7 +13,9 @@
 		Users as UsersIcon,
 		ArrowLeft as ArrowLeftIcon,
 		TriangleAlert as TriangleAlertIcon,
-		X as XIcon
+		X as XIcon,
+		Plus as PlusIcon,
+		Ellipsis
 	} from 'lucide-svelte';
 	import { token } from '$lib/stores/token.svelte';
 	import { is_admin_user } from '$lib/stores/auth.svelte';
@@ -25,6 +27,12 @@
 	import { Progress } from '$lib/components/ui/progress';
 	import { Dialog, DialogContent } from '$lib/components/ui/dialog';
 	import { Badge } from '$lib/components/ui/badge';
+	import {
+		DropdownMenu,
+		DropdownMenuContent,
+		DropdownMenuItem,
+		DropdownMenuTrigger
+	} from '$lib/components/ui/dropdown-menu';
 	import {
 		NONBLANK_URL,
 		QUEUE_URL,
@@ -45,7 +53,12 @@
 	let userSearch = $state('');
 	let processingFiles = $state<string[]>([]);
 	let isLoadingUsers = $state(false);
-	let isGlobalDragOver = $state(false); // For large drag overlay
+	let isGlobalDragOver = $state(false);
+
+	// Duplication dialog state
+	let isDuplicateDialogOpen = $state(false);
+	let duplicateCount = $state(2);
+	let fileToDuplicate: PDFFile | null = $state(null);
 
 	interface APIUser {
 		id: number;
@@ -65,7 +78,7 @@
 		errorMessage: string | null;
 		isConverting: boolean;
 		isCurrentlyOptimized: boolean;
-		previewUrl: string; // Track preview URL for reactivity
+		previewUrl: string;
 	}
 
 	function formatFileSize(bytes: number): string {
@@ -77,7 +90,6 @@
 	}
 
 	function updatePreviewUrl(pdfFile: PDFFile) {
-		// Revoke old URL if exists
 		if (pdfFile.previewUrl) {
 			URL.revokeObjectURL(pdfFile.previewUrl);
 		}
@@ -85,7 +97,6 @@
 		const fileToUse =
 			pdfFile.optimizedFile && pdfFile.isCurrentlyOptimized ? pdfFile.optimizedFile : pdfFile.file;
 
-		// Only create URL for PDFs
 		if (fileToUse.type === 'application/pdf') {
 			pdfFile.previewUrl = URL.createObjectURL(fileToUse);
 		} else {
@@ -189,10 +200,8 @@
 						isConverting: false
 					};
 
-					// Update preview URL (this mutates the object, but we'll replace the whole item)
 					updatePreviewUrl(updatedFileEntry);
 
-					// Replace the old entry in files array with new one to trigger reactivity
 					files = files.map((f) => (f.id === updatedFileEntry.id ? updatedFileEntry : f));
 
 					toast.success('File converted to PDF', {
@@ -227,7 +236,6 @@
 	function deleteFile(pdfFile: PDFFile) {
 		if (!confirm(`Delete "${pdfFile.file.name}"? This cannot be undone.`)) return;
 
-		// Clean up preview URL
 		if (pdfFile.previewUrl) {
 			URL.revokeObjectURL(pdfFile.previewUrl);
 		}
@@ -241,6 +249,72 @@
 			description: pdfFile.file.name,
 			duration: 2000
 		});
+	}
+
+	function duplicateFile(pdfFile: PDFFile) {
+		const newFileEntry: PDFFile = {
+			id: v7(),
+			file: pdfFile.file,
+			optimizedFile: null,
+			isOptimizing: false,
+			nonBlankCount: null,
+			enqueueStatus: 'idle',
+			errorMessage: null,
+			isConverting: false,
+			isCurrentlyOptimized: false,
+			previewUrl: pdfFile.file.type === 'application/pdf' ? URL.createObjectURL(pdfFile.file) : ''
+		};
+
+		files.push(newFileEntry);
+
+		toast.info('File duplicated', {
+			description: pdfFile.file.name,
+			duration: 2000
+		});
+	}
+
+	function openDuplicateDialog(pdf: PDFFile) {
+		fileToDuplicate = pdf;
+		duplicateCount = 2;
+		isDuplicateDialogOpen = true;
+	}
+
+	function confirmDuplicate() {
+		if (!fileToDuplicate) return;
+
+		const count = Math.max(parseInt(duplicateCount.toString(), 10) || 0, 1);
+		if (count < 1) return;
+
+		for (let i = 0; i < count; i++) {
+			const newFileEntry: PDFFile = {
+				id: v7(),
+				file: fileToDuplicate.file,
+				optimizedFile: null,
+				isOptimizing: false,
+				nonBlankCount: null,
+				enqueueStatus: 'idle',
+				errorMessage: null,
+				isConverting: false,
+				isCurrentlyOptimized: false,
+				previewUrl:
+					fileToDuplicate.file.type === 'application/pdf'
+						? URL.createObjectURL(fileToDuplicate.file)
+						: ''
+			};
+			files.push(newFileEntry);
+		}
+
+		toast.info(`${count} copy/copies added`, {
+			description: fileToDuplicate.file.name,
+			duration: 2500
+		});
+
+		closeDuplicateDialog();
+	}
+
+	function closeDuplicateDialog() {
+		isDuplicateDialogOpen = false;
+		fileToDuplicate = null;
 	}
 
 	async function submitAll() {
@@ -330,7 +404,7 @@
 			});
 
 			pdfFile.optimizedFile = optimizedFile;
-			updatePreviewUrl(pdfFile); // Update preview after optimization
+			updatePreviewUrl(pdfFile);
 			toast.success('File optimized successfully', {
 				description: pdfFile.file.name,
 				duration: 3000
@@ -348,7 +422,7 @@
 	function toggleOptimizationView(pdfFile: PDFFile) {
 		if (pdfFile.optimizedFile) {
 			pdfFile.isCurrentlyOptimized = !pdfFile.isCurrentlyOptimized;
-			updatePreviewUrl(pdfFile); // Update preview when toggling view
+			updatePreviewUrl(pdfFile);
 		} else {
 			optimizeFile(pdfFile);
 		}
@@ -393,7 +467,6 @@
 	function handleGlobalDragLeave(e: DragEvent) {
 		e.preventDefault();
 		e.stopPropagation();
-		// Only hide if we're not over a child element
 		if (e.relatedTarget === null) {
 			isGlobalDragOver = false;
 		}
@@ -408,7 +481,6 @@
 		}
 	}
 
-	// Handle user search input with debouncing
 	let searchTimeout: any;
 	function handleUserSearch() {
 		isUserDropdownOpen = true;
@@ -425,17 +497,14 @@
 	}
 
 	onMount(() => {
-		// Fetch all users when component mounts
 		fetchUsers();
 
-		// Global drag handlers for large overlay
 		window.addEventListener('dragover', handleGlobalDragOver);
 		window.addEventListener('dragleave', handleGlobalDragLeave);
 		window.addEventListener('drop', handleGlobalDrop);
 
 		return () => {
 			clearTimeout(searchTimeout);
-			// Clean up all blob URLs
 			files.forEach((f) => {
 				if (f.previewUrl) {
 					URL.revokeObjectURL(f.previewUrl);
@@ -471,18 +540,12 @@
 <div class="min-h-screen bg-background p-4 md:p-8">
 	<!-- Header -->
 	<header class="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between">
-		<div>
-			<h1 class="text-3xl font-bold">PDF Cleaner</h1>
-			<p class="mt-1 text-muted-foreground">Upload files and remove blank pages instantly</p>
-		</div>
-
 		{#if is_admin_user.value}
 			<div class="mt-4 sm:mt-0">
 				<div class="flex items-center gap-2">
 					<UsersIcon class="h-4 w-4 text-muted-foreground" />
 					<span class="text-sm font-medium">Upload for:</span>
 
-					<!-- User selection input with clear button -->
 					<div class="relative w-[240px]">
 						<div
 							class="flex items-center rounded-md border border-input bg-background px-3 py-2 focus-within:ring-1 focus-within:ring-ring"
@@ -525,7 +588,6 @@
 							{/if}
 						</div>
 
-						<!-- Dropdown: only show if no user selected and searching/loading -->
 						{#if (userSearch || isLoadingUsers) && isUserDropdownOpen && !selectedUserId}
 							<div
 								class="absolute top-full z-50 mt-1 w-full animate-in rounded-md border bg-popover text-popover-foreground shadow-md fade-in-0 outline-none zoom-in-95"
@@ -595,7 +657,10 @@
 					class="hidden"
 					onchange={(e) => {
 						const input = e.currentTarget;
-						if (input?.files) handleFiles(input.files);
+						if (input?.files) {
+							handleFiles(input.files);
+							input.value = '';
+						}
 					}}
 				/>
 			</Label>
@@ -616,7 +681,6 @@
 					{pdfFile.enqueueStatus === 'success' ? 'border-green-500/50' : ''}
 					{pdfFile.enqueueStatus === 'error' ? 'border-destructive/50' : ''}"
 				>
-					<!-- Status Indicator -->
 					{#if pdfFile.isConverting}
 						<div class="absolute top-2 left-2 z-10">
 							<div class="h-3 w-3 animate-pulse rounded-full bg-blue-500"></div>
@@ -635,7 +699,6 @@
 						</div>
 					{/if}
 
-					<!-- Thumbnail -->
 					<div class="relative aspect-[3/4] w-full bg-muted">
 						{#if pdfFile.previewUrl}
 							<embed
@@ -664,7 +727,6 @@
 						{/if}
 					</div>
 
-					<!-- Optimized badge -->
 					{#if pdfFile.optimizedFile}
 						<div
 							class="bg-success text-success-foreground absolute top-2 right-2 rounded-full p-1.5"
@@ -673,10 +735,38 @@
 						</div>
 					{/if}
 
-					<!-- Hover action bar: Delete | Preview | Toggle Optimization -->
+					<!-- Action bar with shadcn DropdownMenu -->
 					<div
 						class="absolute right-0 bottom-0 left-0 flex justify-between bg-background/90 p-2 opacity-0 backdrop-blur transition-opacity group-hover:opacity-100"
 					>
+						<DropdownMenu>
+							<DropdownMenuTrigger>
+								<Button variant="ghost" size="icon" class="h-7 w-7" title="Duplicate options">
+									<Ellipsis class="h-3.5 w-3.5 text-muted-foreground" />
+								</Button>
+							</DropdownMenuTrigger>
+							<DropdownMenuContent class="w-48">
+								<DropdownMenuItem
+									onclick={(e) => {
+										e.preventDefault();
+										duplicateFile(pdfFile);
+									}}
+								>
+									<PlusIcon class="mr-2 h-3.5 w-3.5" />
+									Duplicate once
+								</DropdownMenuItem>
+								<DropdownMenuItem
+									onclick={(e) => {
+										e.preventDefault();
+										openDuplicateDialog(pdfFile);
+									}}
+								>
+									<FileTextIcon class="mr-2 h-3.5 w-3.5" />
+									Duplicate multiple…
+								</DropdownMenuItem>
+							</DropdownMenuContent>
+						</DropdownMenu>
+
 						<Button
 							variant="ghost"
 							size="icon"
@@ -723,7 +813,6 @@
 						</Button>
 					</div>
 
-					<!-- Filename -->
 					<div class="p-3">
 						<p class="truncate text-sm font-medium">{pdfFile.file.name}</p>
 						<div class="mt-1 flex items-center justify-between">
@@ -757,7 +846,6 @@
 			{/each}
 		</div>
 
-		<!-- Submit Button -->
 		<div class="mt-8 flex justify-end">
 			<Button size="lg" disabled={isSubmitting || files.length === 0} onclick={() => submitAll()}>
 				{#if isSubmitting}
@@ -786,7 +874,6 @@
 				<DialogContent
 					class="flex h-[90vh] w-[95vw] flex-col overflow-hidden rounded-xl border-0 p-0 shadow-2xl"
 				>
-					<!-- Top Bar -->
 					<div class="flex items-center justify-between border-b bg-background px-6 py-4">
 						<div class="flex items-center gap-2">
 							<Button
@@ -839,7 +926,6 @@
 						</div>
 					</div>
 
-					<!-- PDF Viewer Area -->
 					<div class="flex flex-1 overflow-hidden bg-muted/30">
 						{#if pdf.previewUrl}
 							<iframe
@@ -861,7 +947,6 @@
 						{/if}
 					</div>
 
-					<!-- Status Bar -->
 					{#if pdf.optimizedFile}
 						<div
 							class="flex justify-between border-t bg-background px-6 py-3 text-xs text-muted-foreground"
@@ -883,5 +968,43 @@
 				</DialogContent>
 			</Dialog>
 		{/each}
+	{/if}
+
+	<!-- Duplicate by Number Dialog -->
+	{#if isDuplicateDialogOpen}
+		<Dialog open={isDuplicateDialogOpen} onOpenChange={closeDuplicateDialog}>
+			<DialogContent class="sm:max-w-[425px]">
+				<div class="grid gap-4 py-4">
+					<div class="flex flex-col gap-2">
+						<h3 class="text-lg font-semibold">Duplicate File</h3>
+						<p class="text-sm text-muted-foreground">
+							How many copies of <span class="font-medium">{fileToDuplicate?.file.name}</span> would
+							you like to add?
+						</p>
+					</div>
+
+					<div class="grid gap-2">
+						<Label for="duplicate-count">Number of copies</Label>
+						<Input
+							id="duplicate-count"
+							type="number"
+							min="1"
+							class="w-full"
+							bind:value={duplicateCount}
+							onkeydown={(e) => {
+								if (e.key === 'Enter') {
+									confirmDuplicate();
+								}
+							}}
+						/>
+					</div>
+
+					<div class="flex justify-end gap-2 pt-2">
+						<Button variant="outline" onclick={closeDuplicateDialog}>Cancel</Button>
+						<Button onclick={confirmDuplicate}>Add Copies</Button>
+					</div>
+				</div>
+			</DialogContent>
+		</Dialog>
 	{/if}
 </div>
