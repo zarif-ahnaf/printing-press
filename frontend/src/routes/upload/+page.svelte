@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { v7 } from 'uuid';
+
 	import {
 		Upload as UploadIcon,
 		FileText as FileTextIcon,
@@ -40,6 +40,7 @@
 		ALL_USER_ENDPOINT
 	} from '$lib/constants/backend';
 	import { goto } from '$app/navigation';
+	import { uuidv4 } from '$lib/functions/uuid4';
 
 	// Svelte 5 runes
 	let files = $state<PDFFile[]>([]);
@@ -175,7 +176,7 @@
 	async function handleFiles(fileList: FileList) {
 		for (const file of Array.from(fileList)) {
 			const newFileEntry: PDFFile = {
-				id: v7(),
+				id: uuidv4(),
 				file,
 				optimizedFile: null,
 				isOptimizing: false,
@@ -253,7 +254,7 @@
 
 	function duplicateFile(pdfFile: PDFFile) {
 		const newFileEntry: PDFFile = {
-			id: v7(),
+			id: uuidv4(),
 			file: pdfFile.file,
 			optimizedFile: null,
 			isOptimizing: false,
@@ -287,7 +288,7 @@
 
 		for (let i = 0; i < count; i++) {
 			const newFileEntry: PDFFile = {
-				id: v7(),
+				id: uuidv4(),
 				file: fileToDuplicate.file,
 				optimizedFile: null,
 				isOptimizing: false,
