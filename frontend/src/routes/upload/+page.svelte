@@ -3,17 +3,17 @@
 	import { toast } from 'svelte-sonner';
 	import { v7 } from 'uuid';
 	import {
-		Upload,
-		FileText,
-		Download,
-		Zap,
-		FileCheck,
-		Trash2,
-		Eye,
-		Users,
-		ArrowLeft,
-		TriangleAlert,
-		X
+		Upload as UploadIcon,
+		FileText as FileTextIcon,
+		Download as DownloadIcon,
+		Zap as ZapIcon,
+		FileCheck as FileCheckIcon,
+		Trash2 as Trash2Icon,
+		Eye as EyeIcon,
+		Users as UsersIcon,
+		ArrowLeft as ArrowLeftIcon,
+		TriangleAlert as TriangleAlertIcon,
+		X as XIcon
 	} from 'lucide-svelte';
 	import { token } from '$lib/stores/token.svelte';
 	import { is_admin_user } from '$lib/stores/auth.svelte';
@@ -45,6 +45,7 @@
 	let userSearch = $state('');
 	let processingFiles = $state<string[]>([]);
 	let isLoadingUsers = $state(false);
+	let isGlobalDragOver = $state(false); // For large drag overlay
 
 	interface APIUser {
 		id: number;
@@ -103,7 +104,7 @@
 		isLoadingUsers = true;
 		try {
 			const headers: Record<string, string> = {};
-			if (token) {
+			if (token.value) {
 				headers.Authorization = `Bearer ${token.value}`;
 			}
 
@@ -140,7 +141,7 @@
 		formData.append('file', file);
 
 		const headers: Record<string, string> = {};
-		if (token) {
+		if (token.value) {
 			headers.Authorization = `Bearer ${token.value}`;
 		}
 
@@ -265,7 +266,7 @@
 		}
 
 		const headers: Record<string, string> = {};
-		if (token) {
+		if (token.value) {
 			headers.Authorization = `Bearer ${token.value}`;
 		}
 
@@ -309,7 +310,7 @@
 			formData.append('return_pdf', 'true');
 
 			const headers: Record<string, string> = {};
-			if (token) {
+			if (token.value) {
 				headers.Authorization = `Bearer ${token.value}`;
 			}
 
@@ -358,21 +359,53 @@
 		isDialogOpen = true;
 	}
 
-	// Drag & drop
-	async function handleDragOver(e: DragEvent) {
+	// Drag & drop handlers
+	function handleDragOver(e: DragEvent) {
 		e.preventDefault();
+		e.stopPropagation();
 		isDragging = true;
 	}
 
-	async function handleDragLeave(e: DragEvent) {
+	function handleDragLeave(e: DragEvent) {
 		e.preventDefault();
+		e.stopPropagation();
 		isDragging = false;
 	}
 
-	async function handleDrop(e: DragEvent) {
+	function handleDrop(e: DragEvent) {
 		e.preventDefault();
+		e.stopPropagation();
 		isDragging = false;
-		if (e.dataTransfer?.files) await handleFiles(e.dataTransfer.files);
+		isGlobalDragOver = false;
+		if (e.dataTransfer?.files) {
+			handleFiles(e.dataTransfer.files);
+		}
+	}
+
+	function handleGlobalDragOver(e: DragEvent) {
+		e.preventDefault();
+		e.stopPropagation();
+		if (e.dataTransfer?.types.includes('Files')) {
+			isGlobalDragOver = true;
+		}
+	}
+
+	function handleGlobalDragLeave(e: DragEvent) {
+		e.preventDefault();
+		e.stopPropagation();
+		// Only hide if we're not over a child element
+		if (e.relatedTarget === null) {
+			isGlobalDragOver = false;
+		}
+	}
+
+	function handleGlobalDrop(e: DragEvent) {
+		e.preventDefault();
+		e.stopPropagation();
+		isGlobalDragOver = false;
+		if (e.dataTransfer?.files) {
+			handleFiles(e.dataTransfer.files);
+		}
 	}
 
 	// Handle user search input with debouncing
@@ -395,9 +428,11 @@
 		// Fetch all users when component mounts
 		fetchUsers();
 
-		window.addEventListener('dragover', handleDragOver);
-		window.addEventListener('dragleave', handleDragLeave);
-		window.addEventListener('drop', handleDrop);
+		// Global drag handlers for large overlay
+		window.addEventListener('dragover', handleGlobalDragOver);
+		window.addEventListener('dragleave', handleGlobalDragLeave);
+		window.addEventListener('drop', handleGlobalDrop);
+
 		return () => {
 			clearTimeout(searchTimeout);
 			// Clean up all blob URLs
@@ -406,12 +441,32 @@
 					URL.revokeObjectURL(f.previewUrl);
 				}
 			});
-			window.removeEventListener('dragover', handleDragOver);
-			window.removeEventListener('dragleave', handleDragLeave);
-			window.removeEventListener('drop', handleDrop);
+			window.removeEventListener('dragover', handleGlobalDragOver);
+			window.removeEventListener('dragleave', handleGlobalDragLeave);
+			window.removeEventListener('drop', handleGlobalDrop);
 		};
 	});
 </script>
+
+<!-- Large Drag Overlay -->
+{#if isGlobalDragOver}
+	<div
+		role="region"
+		aria-label="File drop zone"
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+		ondragover={handleGlobalDragOver}
+		ondragleave={handleGlobalDragLeave}
+		ondrop={handleGlobalDrop}
+	>
+		<div
+			class="flex flex-col items-center gap-4 rounded-2xl border-2 border-dashed border-white/30 bg-black/20 p-12 text-center"
+		>
+			<UploadIcon class="h-16 w-16 text-white" />
+			<h2 class="text-2xl font-bold text-white">Drop files here</h2>
+			<p class="text-white/70">Drop your files to upload and clean them</p>
+		</div>
+	</div>
+{/if}
 
 <div class="min-h-screen bg-background p-4 md:p-8">
 	<!-- Header -->
@@ -424,7 +479,7 @@
 		{#if is_admin_user.value}
 			<div class="mt-4 sm:mt-0">
 				<div class="flex items-center gap-2">
-					<Users class="h-4 w-4 text-muted-foreground" />
+					<UsersIcon class="h-4 w-4 text-muted-foreground" />
 					<span class="text-sm font-medium">Upload for:</span>
 
 					<!-- User selection input with clear button -->
@@ -465,7 +520,7 @@
 									}}
 									aria-label="Clear selected user"
 								>
-									<X class="h-3.5 w-3.5" />
+									<XIcon class="h-3.5 w-3.5" />
 								</Button>
 							{/if}
 						</div>
@@ -530,7 +585,7 @@
 					}
 				}}
 			>
-				<Upload class="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
+				<UploadIcon class="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
 				<p class="font-medium">Drag & drop files here</p>
 				<p class="mt-1 text-sm text-muted-foreground">or click to browse files (PDF, DOCX, etc.)</p>
 				<Input
@@ -538,9 +593,9 @@
 					type="file"
 					multiple
 					class="hidden"
-					onchange={async (e) => {
+					onchange={(e) => {
 						const input = e.currentTarget;
-						if (input?.files) await handleFiles(input.files);
+						if (input?.files) handleFiles(input.files);
 					}}
 				/>
 			</Label>
@@ -550,7 +605,7 @@
 	<!-- PDF Thumbnails -->
 	{#if files.length === 0}
 		<div class="py-16 text-center">
-			<FileText class="mx-auto mb-4 h-16 w-16 text-muted-foreground" />
+			<FileTextIcon class="mx-auto mb-4 h-16 w-16 text-muted-foreground" />
 			<p class="text-muted-foreground">Upload files to get started</p>
 		</div>
 	{:else}
@@ -597,7 +652,7 @@
 								{#if pdfFile.isConverting}
 									<span class="text-sm">Converting...</span>
 								{:else}
-									<FileText class="h-12 w-12" />
+									<FileTextIcon class="h-12 w-12" />
 								{/if}
 							</div>
 						{/if}
@@ -614,7 +669,7 @@
 						<div
 							class="bg-success text-success-foreground absolute top-2 right-2 rounded-full p-1.5"
 						>
-							<FileCheck class="h-3 w-3" />
+							<FileCheckIcon class="h-3 w-3" />
 						</div>
 					{/if}
 
@@ -631,7 +686,7 @@
 								deleteFile(pdfFile);
 							}}
 						>
-							<Trash2 class="h-3.5 w-3.5 text-destructive" />
+							<Trash2Icon class="h-3.5 w-3.5 text-destructive" />
 						</Button>
 						<Button
 							variant="ghost"
@@ -642,7 +697,7 @@
 								openPdfDialog(pdfFile);
 							}}
 						>
-							<Eye class="h-3.5 w-3.5 text-muted-foreground" />
+							<EyeIcon class="h-3.5 w-3.5 text-muted-foreground" />
 						</Button>
 						<Button
 							variant="ghost"
@@ -651,7 +706,7 @@
 							disabled={pdfFile.isOptimizing ||
 								pdfFile.isConverting ||
 								pdfFile.enqueueStatus === 'processing'}
-							onclick={async (e) => {
+							onclick={(e) => {
 								e.stopPropagation();
 								toggleOptimizationView(pdfFile);
 							}}
@@ -659,11 +714,11 @@
 							{#if pdfFile.isOptimizing || pdfFile.isConverting}
 								<Progress class="h-1 w-6" value={50} />
 							{:else if pdfFile.optimizedFile && pdfFile.isCurrentlyOptimized}
-								<Zap class="h-3.5 w-3.5 fill-primary text-primary" />
+								<ZapIcon class="h-3.5 w-3.5 fill-primary text-primary" />
 							{:else if pdfFile.optimizedFile}
-								<Zap class="h-3.5 w-3.5 text-primary" />
+								<ZapIcon class="h-3.5 w-3.5 text-primary" />
 							{:else}
-								<Zap class="h-3.5 w-3.5 text-muted-foreground" />
+								<ZapIcon class="h-3.5 w-3.5 text-muted-foreground" />
 							{/if}
 						</Button>
 					</div>
@@ -692,7 +747,7 @@
 							<div
 								class="mt-2 rounded border border-destructive/30 bg-destructive/10 p-2 text-xs text-destructive"
 							>
-								<TriangleAlert class="mr-1 inline h-3 w-3" />
+								<TriangleAlertIcon class="mr-1 inline h-3 w-3" />
 								{pdfFile.errorMessage.substring(0, 50)}
 								{pdfFile.errorMessage.length > 50 ? '...' : ''}
 							</div>
@@ -704,18 +759,14 @@
 
 		<!-- Submit Button -->
 		<div class="mt-8 flex justify-end">
-			<Button
-				size="lg"
-				disabled={isSubmitting || files.length === 0}
-				onclick={async () => await submitAll()}
-			>
+			<Button size="lg" disabled={isSubmitting || files.length === 0} onclick={() => submitAll()}>
 				{#if isSubmitting}
 					<span class="flex items-center gap-2">
 						<Progress class="h-2 w-16" value={50} />
 						Enqueuing...
 					</span>
 				{:else}
-					<Zap class="mr-2 h-4 w-4" />
+					<ZapIcon class="mr-2 h-4 w-4" />
 					Enqueue All Files
 				{/if}
 			</Button>
@@ -747,9 +798,9 @@
 									selectedPdf = null;
 								}}
 							>
-								<ArrowLeft class="h-4 w-4" />
+								<ArrowLeftIcon class="h-4 w-4" />
 							</Button>
-							<FileText class="h-5 w-5 text-muted-foreground" />
+							<FileTextIcon class="h-5 w-5 text-muted-foreground" />
 							<span class="max-w-xs truncate font-medium">{pdf.file.name}</span>
 							{#if is_admin_user.value && selectedUserId !== null}
 								<Badge variant="outline" class="ml-2">
@@ -757,10 +808,10 @@
 								</Badge>
 							{/if}
 						</div>
-						<div class="flex gap-2 p-5">
+						<div class="flex gap-2">
 							{#if pdf.optimizedFile}
 								<Button variant="outline" size="sm" onclick={() => downloadOptimized(pdf)}>
-									<Download class="mr-1.5 h-4 w-4" />
+									<DownloadIcon class="mr-1.5 h-4 w-4" />
 									Download
 								</Button>
 								<Button
@@ -817,10 +868,10 @@
 						>
 							<span class="flex items-center gap-1">
 								{#if pdf.isCurrentlyOptimized}
-									<FileCheck class="text-success h-3 w-3" />
+									<FileCheckIcon class="text-success h-3 w-3" />
 									Cleaned PDF • Blank pages removed
 								{:else}
-									<FileText class="h-3 w-3 text-muted-foreground" />
+									<FileTextIcon class="h-3 w-3 text-muted-foreground" />
 									Original PDF
 								{/if}
 							</span>
