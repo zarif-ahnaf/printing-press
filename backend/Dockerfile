@@ -26,7 +26,6 @@ WORKDIR /app
 ENV DEBIAN_FRONTEND=noninteractive
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
-ENV PATH="/app/.venv/bin:$PATH"
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
 
 # Enable contrib and non-free-firmware in the new deb822 sources format
@@ -59,3 +58,5 @@ EXPOSE 8000/tcp 8000/udp
 
 # Verify
 RUN libreoffice --version && fc-list | wc -l && fc-list : family | sort -u | head -n 30
+
+ENV PATH="/app/.venv/bin:$PATH"
