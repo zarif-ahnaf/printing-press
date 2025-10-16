@@ -1,4 +1,6 @@
 from ninja import Schema
+from decimal import Decimal
+from pydantic import ConfigDict
 
 
 class AdminChargePayload(Schema):
@@ -15,6 +17,21 @@ class AdminChargeResponse(Schema):
 
 
 class AdminDepositPayload(Schema):
-    username: str 
+    username: str
     amount: str
     description: str | None = None
+
+
+class AdminDepositResponse(Schema):
+    success: bool
+    user_id: int
+    username: str
+    amount_deposited: Decimal
+    new_balance: Decimal
+    message: str
+
+    model_config = ConfigDict(
+        json_encoders={
+            Decimal: lambda v: str(v),
+        }
+    )

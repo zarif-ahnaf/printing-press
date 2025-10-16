@@ -2,13 +2,14 @@ from ninja import Router
 from ninja.errors import HttpError
 from django.db import transaction as db_transaction
 from django.contrib.auth.models import User
+from django.shortcuts import get_object_or_404
 from decimal import Decimal, InvalidOperation
 
 from apps.wallet.models import Wallet, Transaction
 from ...auth import AuthBearer
 from ...http import HttpRequest
 from ...decorators import admin_required
-from ...schemas.admin import AdminDepositPayload
+from ...schemas.admin import AdminDepositPayload, AdminDepositResponse
 
 router = Router(tags=["Admin Wallet"])
 
@@ -17,7 +18,7 @@ router = Router(tags=["Admin Wallet"])
     "",
     auth=AuthBearer(),
     response={
-        200: dict,
+        200: AdminDepositResponse,
         400: dict,
         403: dict,
         404: dict,
@@ -28,10 +29,7 @@ def admin_deposit(
     request: HttpRequest,
     payload: AdminDepositPayload,
 ):
-    try:
-        target_user = User.objects.get(username=payload.username)
-    except User.DoesNotExist:
-        raise HttpError(404, "User not found.")
+    target_user = get_object_or_404(User, username=payload.username)
 
     try:
         amount = Decimal(payload.amount)
@@ -43,11 +41,7 @@ def admin_deposit(
 
     wallet, _ = Wallet.objects.get_or_create(user=target_user)
 
-    # Use provided description or generate default
-    if payload.description is not None:
-        description = payload.description
-    else:
-        description = f"Admin deposit by {request.auth.username}"
+    description = payload.description or f"Admin deposit by {request.auth.username}"
 
     with db_transaction.atomic():
         wallet.deposit(amount)
@@ -59,11 +53,11 @@ def admin_deposit(
             description=description,
         )
 
-    return {
-        "success": True,
-        "user_id": target_user.pk,
-        "username": target_user.username,
-        "amount_deposited": str(amount),
-        "new_balance": str(wallet.balance),
-        "message": f"Successfully deposited {amount} to user {target_user.username}'s wallet.",
-    }
+    return AdminDepositResponse(
+        success=True,
+        user_id=target_user.pk,
+        username=target_user.username,
+        amount_deposited=amount,
+        new_balance=wallet.balance,
+        message=f"Successfully deposited {amount} to user {target_user.username}'s wallet.",
+    )
