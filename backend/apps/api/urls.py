@@ -64,9 +64,11 @@ def register_routers():
                 continue
 
             api.add_router(url_prefix, router)
-            logger.debug(f"Successfully registered router from {full_module_name} at {url_prefix or '/'}")
+            logger.debug(
+                f"Successfully registered router from {full_module_name} at {url_prefix or '/'}"
+            )
 
-        except Exception :
+        except Exception:
             logger.exception(
                 f"Failed to load router module '{full_module_name}' "
                 f"from file '{py_file}'. Skipping this module."

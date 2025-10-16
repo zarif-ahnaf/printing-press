@@ -1,5 +1,3 @@
-// stores/token.svelte.ts
-
 let _token: string | null = null;
 
 if (typeof window !== 'undefined') {
@@ -8,7 +6,6 @@ if (typeof window !== 'undefined') {
 
 let tokenState = $state(_token);
 
-// Create a persistent effect root
 $effect.root(() => {
 	if (typeof window === 'undefined') return;
 

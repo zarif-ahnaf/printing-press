@@ -1,7 +1,7 @@
 from ...models import Token
 from django.contrib.auth import authenticate
 from django.http import Http404, HttpRequest
-from ninja import Form, Router
+from ninja import Router
 from ...schemas.login import LoginInSchema, LoginOutSchema
 
 

@@ -16,6 +16,7 @@
 		X
 	} from 'lucide-svelte';
 	import { token } from '$lib/stores/token.svelte';
+	import { is_admin_user } from '$lib/stores/auth.svelte';
 
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
@@ -38,7 +39,6 @@
 	let isSubmitting = $state(false);
 	let selectedPdf = $state<PDFFile | null>(null);
 	let isDialogOpen = $state(false);
-	let isAdmin = $state(true);
 	let isUserDropdownOpen = $state(false);
 	let selectedUserId: number | null = $state<number | null>(null);
 	let users = $state<APIUser[]>([]);
@@ -260,7 +260,7 @@
 			formData.append('files', fileToSubmit);
 		});
 
-		if (isAdmin && selectedUserId !== null) {
+		if (is_admin_user.value && selectedUserId !== null) {
 			formData.append('user_id', selectedUserId.toString());
 		}
 
@@ -421,7 +421,7 @@
 			<p class="mt-1 text-muted-foreground">Upload files and remove blank pages instantly</p>
 		</div>
 
-		{#if isAdmin}
+		{#if is_admin_user.value}
 			<div class="mt-4 sm:mt-0">
 				<div class="flex items-center gap-2">
 					<Users class="h-4 w-4 text-muted-foreground" />
@@ -751,7 +751,7 @@
 							</Button>
 							<FileText class="h-5 w-5 text-muted-foreground" />
 							<span class="max-w-xs truncate font-medium">{pdf.file.name}</span>
-							{#if isAdmin && selectedUserId !== null}
+							{#if is_admin_user.value && selectedUserId !== null}
 								<Badge variant="outline" class="ml-2">
 									{getDisplayName(users.find((u) => u.id === selectedUserId)!)}
 								</Badge>

@@ -1,22 +1,24 @@
-import tailwindcss from '@tailwindcss/vite';
-import { sveltekit } from '@sveltejs/kit/vite';
 import { defineConfig } from 'vite';
+import { sveltekit } from '@sveltejs/kit/vite';
+import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
 	plugins: [tailwindcss(), sveltekit()],
-	esbuild: {
-		target: 'esnext',
-		legalComments: 'external'
-	},
 	build: {
-		commonjsOptions: {
-			transformMixedEsModules: true
+		minify: 'terser',
+		terserOptions: {
+			format: { comments: false },
+			compress: {
+				drop_console: true,
+				drop_debugger: true,
+				passes: 3
+			},
+			keep_classnames: false,
+			keep_fnames: false
 		},
-		chunkSizeWarningLimit: 2048,
-		emptyOutDir: true,
 		target: 'esnext',
 		cssTarget: 'esnext',
-		minify: 'terser'
-		//sourcemap: true
+		chunkSizeWarningLimit: 2048,
+		emptyOutDir: true
 	}
 });
