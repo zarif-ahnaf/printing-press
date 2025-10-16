@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { v4 as uuidv4, v4 } from 'uuid';
+	import { v7 } from 'uuid';
 	import {
 		Upload,
 		FileText,
@@ -13,10 +13,9 @@
 		Users,
 		ArrowLeft,
 		TriangleAlert,
-
 		X
-
 	} from 'lucide-svelte';
+	import { token } from '$lib/stores/token.svelte';
 
 	import { Button } from '$lib/components/ui/button';
 	import { Card, CardContent, CardHeader, CardTitle } from '$lib/components/ui/card';
@@ -103,10 +102,9 @@
 	async function fetchUsers(searchTerm: string = '') {
 		isLoadingUsers = true;
 		try {
-			const token = localStorage.getItem('token');
 			const headers: Record<string, string> = {};
 			if (token) {
-				headers.Authorization = `Bearer ${token}`;
+				headers.Authorization = `Bearer ${token.value}`;
 			}
 
 			let url = ALL_USER_ENDPOINT;
@@ -141,10 +139,9 @@
 		const formData = new FormData();
 		formData.append('file', file);
 
-		const token = localStorage.getItem('token');
 		const headers: Record<string, string> = {};
 		if (token) {
-			headers.Authorization = `Bearer ${token}`;
+			headers.Authorization = `Bearer ${token.value}`;
 		}
 
 		const response = await fetch(PDF_CONVERT_URL, {
@@ -166,7 +163,7 @@
 	async function handleFiles(fileList: FileList) {
 		for (const file of Array.from(fileList)) {
 			const newFileEntry: PDFFile = {
-				id: v4(),
+				id: v7(),
 				file,
 				optimizedFile: null,
 				isOptimizing: false,
@@ -266,12 +263,10 @@
 		if (isAdmin && selectedUserId !== null) {
 			formData.append('user_id', selectedUserId.toString());
 		}
-		console.log(selectedUserId);
-		console.log(formData);
-		const token = localStorage.getItem('token');
+
 		const headers: Record<string, string> = {};
 		if (token) {
-			headers.Authorization = `Bearer ${token}`;
+			headers.Authorization = `Bearer ${token.value}`;
 		}
 
 		try {
@@ -313,10 +308,9 @@
 			formData.append('file', pdfFile.file);
 			formData.append('return_pdf', 'true');
 
-			const token = localStorage.getItem('token');
 			const headers: Record<string, string> = {};
 			if (token) {
-				headers.Authorization = `Bearer ${token}`;
+				headers.Authorization = `Bearer ${token.value}`;
 			}
 
 			const response = await fetch(NONBLANK_URL, {

@@ -29,7 +29,7 @@ def admin_deposit(
     payload: AdminDepositPayload,
 ):
     try:
-        target_user = User.objects.get(id=payload.user_id)
+        target_user = User.objects.get(username=payload.username)
     except User.DoesNotExist:
         raise HttpError(404, "User not found.")
 
