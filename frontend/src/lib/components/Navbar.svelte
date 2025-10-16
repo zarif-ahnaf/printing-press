@@ -11,6 +11,7 @@
 	import { sha256 } from '$lib/functions/sha265';
 	import { navbar_state } from '$lib/stores/navbar.svelte';
 	import { is_logged_in } from '$lib/stores/auth.svelte';
+	import { page } from '$app/state';
 
 	let initials = $state('');
 	$effect(() => {
@@ -62,7 +63,7 @@
 						</DropdownMenu>
 					{:else}
 						<Button variant="default">
-							<a href="/login">Login</a>
+							<a href="/login?next={page.url.pathname}">Login</a>
 						</Button>
 					{/if}
 				</div>

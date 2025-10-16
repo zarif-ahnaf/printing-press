@@ -1,4 +1,3 @@
-<!-- src/routes/login/+page.svelte -->
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
 	import {
@@ -21,7 +20,7 @@
 	let password = $state('');
 	let loading = $state(false);
 	let showPassword = $state(false);
-	let next = $state('/dashboard'); // default redirect
+	let next = $state('/');
 
 	onMount(() => {
 		const urlParams = new URLSearchParams(window.location.search);
