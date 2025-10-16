@@ -19,7 +19,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-default-groups
 
 # -------- Final stage --------
-FROM debian:trixie-slim
+FROM python:3.13-slim-trixie
 
 WORKDIR /app
 
