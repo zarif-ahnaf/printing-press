@@ -12,5 +12,8 @@ export const navbar_state = {
 	},
 	get visible() {
 		return navbarState === 'visible';
+	},
+	get state() {
+		return navbarState;
 	}
 };

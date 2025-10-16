@@ -1,3 +1,4 @@
+<!-- src/routes/login/+page.svelte -->
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
 	import {
@@ -14,21 +15,37 @@
 	import { Eye, EyeOff } from 'lucide-svelte';
 	import { token } from '$lib/stores/token.svelte';
 	import { is_logged_in } from '$lib/stores/auth.svelte';
+	import { onMount } from 'svelte';
 
 	let username = $state('');
 	let password = $state('');
 	let loading = $state(false);
 	let showPassword = $state(false);
+	let next = $state('/dashboard'); // default redirect
+
+	onMount(() => {
+		const urlParams = new URLSearchParams(window.location.search);
+		const nextParam = urlParams.get('next');
+		if (nextParam && isValidRedirectPath(nextParam)) {
+			next = nextParam;
+		}
+	});
+
+	function isValidRedirectPath(path: string): boolean {
+		// Prevent open redirects (only allow relative paths starting with /)
+		try {
+			const url = new URL(path, window.location.origin);
+			return url.origin === window.location.origin && path.startsWith('/');
+		} catch {
+			return false;
+		}
+	}
 
 	async function handleSubmit(e: SubmitEvent) {
 		e.preventDefault();
 		loading = true;
 
 		try {
-			const formData = new FormData();
-			formData.append('username', username);
-			formData.append('password', password);
-
 			const res = await fetch(LOGIN_URL, {
 				method: 'POST',
 				headers: {
@@ -40,14 +57,13 @@
 				})
 			});
 
-			let data: { token?: string } = {};
-			data = await res.json();
+			const data = await res.json();
 
 			if (res.ok && typeof data.token === 'string') {
 				token.set(data.token);
 				toast.success('Login successful!');
 				setTimeout(() => {
-					window.location.href = '/dashboard';
+					window.location.href = next;
 				}, 1000);
 			} else {
 				toast.error('Invalid username or password.');
@@ -59,6 +75,7 @@
 			loading = false;
 		}
 	}
+
 	function togglePasswordVisibility() {
 		showPassword = !showPassword;
 	}
@@ -73,8 +90,8 @@
 			</CardHeader>
 			<CardContent class="space-y-4 text-center">
 				<p class="text-sm text-muted-foreground">Go to your dashboard or continue working.</p>
-				<Button onclick={() => (window.location.href = '/dashboard')} class="w-full">
-					Go to Dashboard
+				<Button onclick={() => (window.location.href = next)} class="w-full">
+					Go to {next === '/dashboard' ? 'Dashboard' : 'Requested Page'}
 				</Button>
 			</CardContent>
 		</Card>

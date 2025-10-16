@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { Palette, Zap, ShieldCheck, ArrowRight, FileText, BookOpen, Ruler } from 'lucide-svelte';
+	import { Palette, Zap, ShieldCheck, ArrowRight, FileText } from 'lucide-svelte';
 
 	// Animation states with proper types
 	let progress = $state(0);
@@ -10,7 +10,6 @@
 	let circuitProgress = $state(0);
 	let dots = $state<number[]>(Array(25).fill(0));
 	let paperType = $state<'matte' | 'glossy' | 'textured' | 'recycled'>('matte');
-	let colorSwatchHover = $state<number | null>(null);
 	let printPressActive = $state(false);
 	import { Button } from '$lib/components/ui/button';
 	let mouseX = $state(0);
@@ -153,12 +152,9 @@
 				events.
 			</p>
 			<div class="flex flex-col justify-center gap-4 sm:flex-row">
-				<Button size="lg" variant="default" onclick={() => console.log('Get Started clicked')}>
+				<Button size="lg" variant="default" href="/upload">
 					Get Started
 					<ArrowRight class="ml-2 h-4 w-4" />
-				</Button>
-				<Button size="lg" variant="outline" onclick={() => console.log('View Samples clicked')}>
-					View Samples
 				</Button>
 			</div>
 		</div>
@@ -274,84 +270,6 @@
 						{type.charAt(0).toUpperCase() + type.slice(1)}
 					</button>
 				{/each}
-			</div>
-		</div>
-	</div>
-</section>
-
-<!-- 3D Color Swatches Section -->
-<section class="bg-muted py-24">
-	<div class="container mx-auto px-4">
-		<div class="mb-16 text-center">
-			<h2 class="mb-4 text-3xl font-bold text-foreground">Color Perfection</h2>
-			<p class="mx-auto max-w-2xl text-lg text-muted-foreground">
-				We match colors with precision using Pantone and CMYK standards
-			</p>
-		</div>
-
-		<div class="mx-auto max-w-4xl">
-			<!-- 3D color cubes -->
-			<div class="grid grid-cols-2 gap-6 md:grid-cols-4">
-				{#each [{ name: 'Pantone 2945 C', color: 'bg-[#002868]' }, { name: 'Pantone 19-4052 TCX', color: 'bg-[#5A575C]' }, { name: 'Pantone 18-1660 TCX', color: 'bg-[#E2725B]' }, { name: 'Pantone 17-4041 TCX', color: 'bg-[#7D8694]' }] as swatch, i}
-					<div
-						class="transform-style-preserve-3d relative aspect-square overflow-hidden rounded-xl border border-border transition-all duration-500 {colorSwatchHover ===
-						i
-							? 'z-10 scale-105 shadow-lg'
-							: ''}"
-						onmouseenter={() => (colorSwatchHover = i)}
-						onmouseleave={() => (colorSwatchHover = null)}
-						role="button"
-						aria-label="Color swatch: {swatch.name}"
-						tabindex="0"
-					>
-						<!-- 3D cube effect -->
-						<div class="transform-style-preserve-3d h-full w-full">
-							<div class="h-full w-full rounded-xl {swatch.color}"></div>
-							<div
-								class="rotateX(90deg) translateZ(20px) absolute top-0 left-0 h-1/3 w-full transform rounded-t-xl bg-black/10"
-							></div>
-							<div
-								class="rotateY(-90deg) translateZ(20px) absolute top-0 right-0 h-full w-1/3 transform rounded-r-xl bg-white/30"
-							></div>
-						</div>
-
-						<div
-							class="absolute right-0 bottom-0 left-0 bg-black/60 p-2 text-sm text-white transition-opacity {colorSwatchHover ===
-							i
-								? 'opacity-100'
-								: 'opacity-0'}"
-						>
-							{swatch.name}
-						</div>
-					</div>
-				{/each}
-			</div>
-
-			<!-- Color matching info -->
-			<div class="mt-12 grid grid-cols-1 gap-8 md:grid-cols-2">
-				<div class="rounded-xl border border-border bg-card p-6">
-					<div class="flex items-center gap-4">
-						<div class="flex h-12 w-12 items-center justify-center rounded-full bg-[#002868]">
-							<BookOpen class="h-5 w-5 text-white" />
-						</div>
-						<div>
-							<h3 class="font-bold text-foreground">Pantone Matching</h3>
-							<p class="text-muted-foreground">Exact color matching for brand consistency</p>
-						</div>
-					</div>
-				</div>
-
-				<div class="rounded-xl border border-border bg-card p-6">
-					<div class="flex items-center gap-4">
-						<div class="flex h-12 w-12 items-center justify-center rounded-full bg-[#5A575C]">
-							<Ruler class="h-5 w-5 text-white" />
-						</div>
-						<div>
-							<h3 class="font-bold text-foreground">CMYK Precision</h3>
-							<p class="text-muted-foreground">Optimal color separation for print</p>
-						</div>
-					</div>
-				</div>
 			</div>
 		</div>
 	</div>
@@ -601,10 +519,6 @@
 			<p class="mb-10 text-xl text-muted-foreground">
 				Join thousands of satisfied customers who trust us with their most important prints
 			</p>
-			<Button size="lg" variant="default" onclick={() => console.log('Upload Design clicked')}>
-				Upload Your Design
-				<ArrowRight class="ml-2 h-4 w-4" />
-			</Button>
 
 			<!-- 3D satisfaction rating -->
 			<div class="mt-12 flex justify-center">
@@ -663,14 +577,6 @@
 		100% {
 			transform: rotate(360deg);
 		}
-	}
-
-	.animate-float {
-		animation: float 6s ease-in-out infinite;
-	}
-
-	.animate-wave {
-		animation: wave 1.5s infinite;
 	}
 
 	.animate-rotate {
