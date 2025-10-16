@@ -29,48 +29,27 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 ENV PATH="/app/.venv/bin:$PATH"
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
 
-# Add contrib and non-free-firmware to sources.list (required for mscorefonts)
-RUN sed -i 's/main/main contrib non-free-firmware/g' /etc/apt/sources.list
+# Enable contrib and non-free-firmware in the new deb822 sources format
+RUN sed -i 's/Components: main/Components: main contrib non-free-firmware/' /etc/apt/sources.list.d/debian.sources
 
 # Pre-accept Microsoft fonts EULA
 RUN echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections
 
-# Install LibreOffice + only available, verified font packages in trixie
+# Now install packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Core
     libreoffice-core libreoffice-writer libreoffice-calc libreoffice-impress \
     fontconfig \
-    \
-    # Universal coverage (Google Noto = best for global support)
     fonts-noto-core fonts-noto-ui-core fonts-noto-cjk fonts-noto-color-emoji fonts-noto-mono fonts-noto-extra \
-    \
-    # Common fallbacks
     fonts-dejavu fonts-liberation fonts-freefont-ttf fonts-liberation2 fonts-cantarell fonts-droid-fallback \
-    \
-    # Microsoft core fonts (Arial, Times, etc.)
     ttf-mscorefonts-installer \
-    \
-    # CJK
     fonts-wqy-zenhei fonts-wqy-microhei fonts-ipafont-gothic fonts-ipafont-mincho \
-    \
-    # Arabic, Persian, Hebrew
     fonts-hosny-amiri fonts-hosny-thabit fonts-farsiweb fonts-lklug-sinhala \
-    \
-    # Korean
     fonts-nanum \
-    \
-    # Thai
     fonts-thai-tlwg \
-    \
-    # Symbols, emoji, math
     fonts-symbola fonts-font-awesome fonts-material-design-icons-iconfont fonts-stix fonts-lmodern \
-    \
-    # Myanmar, Tibetan, etc. (if available)
     fonts-sil-padauk \
-    \
     && fc-cache -fv \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
-
 # Copy virtual environment and project
 COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder /app /app
