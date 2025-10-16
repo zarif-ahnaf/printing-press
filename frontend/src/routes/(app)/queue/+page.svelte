@@ -14,6 +14,7 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
+	import { Checkbox } from '$lib/components/ui/checkbox'; // Import shadcn Checkbox
 	import { is_admin_user, user_username } from '$lib/stores/auth.svelte';
 
 	import {
@@ -148,50 +149,6 @@
 		}
 	};
 
-	const handleFileUpload = async (event: Event) => {
-		const input = event.target as HTMLInputElement;
-		if (!input.files || input.files.length === 0) return;
-
-		try {
-			isLoading = true;
-			error = null;
-
-			const formData = new FormData();
-			Array.from(input.files).forEach((file) => {
-				formData.append('files', file);
-			});
-
-			const response = await fetch('/api/queue/', {
-				method: 'POST',
-				headers: {
-					Authorization: `Bearer ${localStorage.getItem('token')}`
-				},
-				body: formData
-			});
-
-			if (!response.ok) {
-				throw new Error(`Failed to upload files: ${response.status}`);
-			}
-
-			const data = await response.json();
-
-			await fetchQueue();
-
-			toast.success('Upload Successful', {
-				description: `Uploaded ${data.queue_ids.length} file(s). Total charged: ${data.total_charged_bdt}`
-			});
-
-			input.value = '';
-		} catch (err) {
-			const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
-			toast.error('Upload Failed', {
-				description: errorMessage
-			});
-		} finally {
-			isLoading = false;
-		}
-	};
-
 	const mergeSelectedPDFs = async () => {
 		if (selectedFiles.size < 2) {
 			mergeError = 'Please select at least 2 files to merge';
@@ -243,7 +200,7 @@
 				description: 'PDFs have been merged successfully'
 			});
 
-			selectedFiles.clear();
+			selectedFiles = new Set();
 			await fetchQueue();
 		} catch (err) {
 			const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
@@ -364,11 +321,13 @@
 	};
 
 	const toggleFileSelection = (id: number) => {
-		if (selectedFiles.has(id)) {
-			selectedFiles.delete(id);
+		const newSet = new Set(selectedFiles);
+		if (newSet.has(id)) {
+			newSet.delete(id);
 		} else {
-			selectedFiles.add(id);
+			newSet.add(id);
 		}
+		selectedFiles = newSet;
 	};
 
 	const toggleMergedView = () => {
@@ -462,7 +421,7 @@
 						<div class="mb-4 flex items-center gap-2">
 							<span class="text-sm font-medium">Selected: {selectedFiles.size} files</span>
 							{#if selectedFiles.size > 0}
-								<Button variant="ghost" size="sm" onclick={() => selectedFiles.clear()}>
+								<Button variant="ghost" size="sm" onclick={() => (selectedFiles = new Set())}>
 									Clear Selection
 								</Button>
 							{/if}
@@ -475,17 +434,18 @@
 								<TableRow class="bg-muted/40">
 									{#if is_admin_user.value}
 										<TableHead class="w-[50px]">
-											<input
-												type="checkbox"
+											<Checkbox
 												checked={queue.filter((f) => !f.is_merged).length > 0 &&
 													queue.filter((f) => !f.is_merged).every((f) => selectedFiles.has(f.id))}
-												onchange={(e) => {
-													const checked = (e.target as HTMLInputElement).checked;
+												on:change={(e) => {
+													const checked = e.target.checked;
 													const unmergedQueue = queue.filter((f) => !f.is_merged);
 													if (checked) {
-														unmergedQueue.forEach((f) => selectedFiles.add(f.id));
+														const newSet = new Set(selectedFiles);
+														unmergedQueue.forEach((f) => newSet.add(f.id));
+														selectedFiles = newSet;
 													} else {
-														selectedFiles.clear();
+														selectedFiles = new Set();
 													}
 												}}
 											/>
@@ -508,10 +468,9 @@
 										{#if is_admin_user.value}
 											<TableCell>
 												{#if !file.is_merged}
-													<input
-														type="checkbox"
+													<Checkbox
 														checked={selectedFiles.has(file.id)}
-														onchange={() => toggleFileSelection(file.id)}
+														on:change={() => toggleFileSelection(file.id)}
 													/>
 												{:else}
 													<span class="text-xs text-muted-foreground">Merged</span>
@@ -582,8 +541,9 @@
 														{#if !file.is_merged}
 															<DropdownMenuItem
 																onclick={() => {
-																	selectedFiles.clear();
-																	selectedFiles.add(file.id);
+																	const newSet = new Set();
+																	newSet.add(file.id);
+																	selectedFiles = newSet;
 																	mergeSelectedPDFs();
 																}}
 															>
