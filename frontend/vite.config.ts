@@ -7,11 +7,8 @@ export default defineConfig({
 	build: {
 		minify: 'terser',
 		terserOptions: {
-			format: { comments: false },
-			compress: {
-				drop_console: true,
-				drop_debugger: true,
-				passes: 3
+			format: {
+				comments: false
 			},
 			keep_classnames: false,
 			keep_fnames: false

@@ -481,7 +481,7 @@
 		}
 	}
 
-	let searchTimeout: any;
+	let searchTimeout: ReturnType<typeof setTimeout>;
 	function handleUserSearch() {
 		isUserDropdownOpen = true;
 		clearTimeout(searchTimeout);
