@@ -15,6 +15,6 @@ class AdminChargeResponse(Schema):
 
 
 class AdminDepositPayload(Schema):
-    user_id: int
+    username: str 
     amount: str
     description: str | None = None
