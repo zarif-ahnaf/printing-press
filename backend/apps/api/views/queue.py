@@ -40,7 +40,6 @@ def queue_files(
         # Note: This returns 200 with a message — acceptable if intentional
         return {"message": "No files provided"}
 
-    # Validate all files first (PDF + page count)
     total_pages = 0
     file_data_list: list[tuple[str, bytes, int]] = []  # (filename, content, page_count)
 
