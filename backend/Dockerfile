@@ -29,47 +29,45 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 ENV PATH="/app/.venv/bin:$PATH"
 ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
 
+# Add contrib and non-free-firmware to sources.list (required for mscorefonts)
+RUN sed -i 's/main/main contrib non-free-firmware/g' /etc/apt/sources.list
+
 # Pre-accept Microsoft fonts EULA
 RUN echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections
 
-# Install LibreOffice + massive font coverage
+# Install LibreOffice + only available, verified font packages in trixie
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    # Core apps
+    # Core
     libreoffice-core libreoffice-writer libreoffice-calc libreoffice-impress \
+    fontconfig \
     \
-    # Fontconfig & utils
-    fontconfig fonts-noto-core fonts-noto-ui-core fonts-noto-color-emoji \
+    # Universal coverage (Google Noto = best for global support)
+    fonts-noto-core fonts-noto-ui-core fonts-noto-cjk fonts-noto-color-emoji fonts-noto-mono fonts-noto-extra \
     \
-    # Microsoft fonts (Arial, Times, etc.)
+    # Common fallbacks
+    fonts-dejavu fonts-liberation fonts-freefont-ttf fonts-liberation2 fonts-cantarell fonts-droid-fallback \
+    \
+    # Microsoft core fonts (Arial, Times, etc.)
     ttf-mscorefonts-installer \
     \
-    # Latin & extended
-    fonts-dejavu fonts-liberation fonts-freefont-ttf fonts-liberation2 \
-    fonts-cantarell fonts-ubuntu fonts-droid-fallback \
+    # CJK
+    fonts-wqy-zenhei fonts-wqy-microhei fonts-ipafont-gothic fonts-ipafont-mincho \
     \
-    # CJK (Chinese, Japanese, Korean)
-    fonts-noto-cjk fonts-wqy-zenhei fonts-wqy-microhei fonts-ipafont-gothic fonts-ipafont-mincho \
-    fonts-hanazono \
+    # Arabic, Persian, Hebrew
+    fonts-hosny-amiri fonts-hosny-thabit fonts-farsiweb fonts-lklug-sinhala \
     \
-    # Arabic, Hebrew, Persian
-    fonts-hosny-amiri fonts-khmeros-core fonts-lklug-sinhala \
-    fonts-nanum fonts-lohit-devanagari fonts-lohit-bengali fonts-lohit-gujarati \
-    fonts-lohit-kannada fonts-lohit-malayalam fonts-lohit-oriya fonts-lohit-punjabi \
-    fonts-lohit-tamil fonts-lohit-telugu fonts-samyak-devanagari fonts-samyak-tamil \
-    fonts-guru fonts-gubbi fonts-telu fonts-telu-extra fonts-kalapi \
-    fonts-arabeyes fonts-hosny-thabit fonts-farsiweb \
+    # Korean
+    fonts-nanum \
     \
-    # Thai, Vietnamese, etc.
-    fonts-thai-tlwg fonts-sil-padauk fonts-sil-nuosu \
+    # Thai
+    fonts-thai-tlwg \
     \
-    # Emoji & symbols
-    fonts-symbola fonts-font-awesome fonts-material-design-icons-iconfont \
+    # Symbols, emoji, math
+    fonts-symbola fonts-font-awesome fonts-material-design-icons-iconfont fonts-stix fonts-lmodern \
     \
-    # Math & special
-    fonts-stix fonts-asana-math fonts-lmodern \
+    # Myanmar, Tibetan, etc. (if available)
+    fonts-sil-padauk \
     \
-    # Fallback & coverage
-    fonts-noto-mono fonts-noto-extra \
     && fc-cache -fv \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
