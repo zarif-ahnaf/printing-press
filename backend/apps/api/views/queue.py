@@ -32,7 +32,6 @@ def queue_files(
             target_user = User.objects.get(id=user_id)
         except User.DoesNotExist:
             raise HttpError(404, "User not found.")
-        print("hello")
     else:
         # Regular user uploading for themselves
         target_user = current_user
@@ -41,7 +40,6 @@ def queue_files(
         # Note: This returns 200 with a message — acceptable if intentional
         return {"message": "No files provided"}
 
-    # Validate all files first (PDF + page count)
     total_pages = 0
     file_data_list: list[tuple[str, bytes, int]] = []  # (filename, content, page_count)
 
