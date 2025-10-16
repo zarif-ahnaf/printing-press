@@ -11,13 +11,18 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from ..utils.pdf import count_pdf_pages
 from ..http import HttpRequest
 from django.shortcuts import get_object_or_404
+from ..schemas.queue import (
+    QueueUploadResponse,
+    QueueListResponse,
+    ProcessStatusResponse,
+)
 
 router = Router(tags=["Queue"])
 
 COST_PER_PAGE = Decimal("1.0")
 
 
-@router.post("", auth=AuthBearer())
+@router.post("", auth=AuthBearer(), response=QueueUploadResponse)
 def queue_files(
     request: HttpRequest,
     files: File[list[UploadedFile]],
@@ -120,7 +125,9 @@ def queue_files(
     return response
 
 
-@router.get("", auth=AuthBearer(), summary="List queued files")
+@router.get(
+    "", auth=AuthBearer(), response=QueueListResponse, summary="List queued files"
+)
 def list_queue(
     request: HttpRequest,
     include_processed: bool = False,
@@ -150,7 +157,10 @@ def list_queue(
 
 
 @router.post(
-    "/{queue_id}/processed", auth=AuthBearer(), summary="Mark file as processed"
+    "/{queue_id}/processed",
+    response=ProcessStatusResponse,
+    auth=AuthBearer(),
+    summary="Mark file as processed",
 )
 def mark_as_processed(
     request: HttpRequest,
@@ -173,7 +183,10 @@ def mark_as_processed(
 
 
 @router.delete(
-    "/{queue_id}/processed", auth=AuthBearer(), summary="Mark file as unprocessed"
+    "/{queue_id}/processed",
+    response=ProcessStatusResponse,
+    auth=AuthBearer(),
+    summary="Mark file as unprocessed",
 )
 def mark_as_unprocessed(
     request: HttpRequest,

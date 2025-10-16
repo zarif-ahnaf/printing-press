@@ -17,6 +17,7 @@ dependencies = [
     "httptools>=0.7.1",
     "psycopg[binary]>=3.2.10",
     "python-dotenv>=1.1.1",
+    "django-dynamic-filenames>=1.4.0",
 ]
 
 [dependency-groups]

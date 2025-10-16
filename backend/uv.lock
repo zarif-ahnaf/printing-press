@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.13"
 
 [[package]]
@@ -28,6 +28,7 @@ dependencies = [
     { name = "colorama", marker = "sys_platform == 'win32'" },
     { name = "django" },
     { name = "django-cors-headers" },
+    { name = "django-dynamic-filenames" },
     { name = "django-ninja" },
     { name = "httptools" },
     { name = "psycopg", extra = ["binary"] },
@@ -48,6 +49,7 @@ requires-dist = [
     { name = "colorama", marker = "sys_platform == 'win32'", specifier = ">=0.4" },
     { name = "django", specifier = ">=5.2.7" },
     { name = "django-cors-headers", specifier = ">=4.9.0" },
+    { name = "django-dynamic-filenames", specifier = ">=1.4.0" },
     { name = "django-ninja", specifier = ">=1.4.3" },
     { name = "httptools", specifier = ">=0.7.1" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.10" },
@@ -109,6 +111,18 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/21/39/55822b15b7ec87410f34cd16ce04065ff390e50f9e29f31d6d116fc80456/django_cors_headers-4.9.0.tar.gz", hash = "sha256:fe5d7cb59fdc2c8c646ce84b727ac2bca8912a247e6e68e1fb507372178e59e8", size = 21458, upload-time = "2025-09-18T10:40:52.326Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/30/d8/19ed1e47badf477d17fb177c1c19b5a21da0fd2d9f093f23be3fb86c5fab/django_cors_headers-4.9.0-py3-none-any.whl", hash = "sha256:15c7f20727f90044dcee2216a9fd7303741a864865f0c3657e28b7056f61b449", size = 12809, upload-time = "2025-09-18T10:40:50.843Z" },
+]
+
+[[package]]
+name = "django-dynamic-filenames"
+version = "1.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "django" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3f/d6/a895456f0fc9e1ca3e7772d4aebf9200815226ea738508023de1f7c23629/django_dynamic_filenames-1.4.0.tar.gz", hash = "sha256:8913151c2eb505079dd1dd6891e20150806a3a59fdd71a61436d5af4a0fd7b8c", size = 4642, upload-time = "2024-10-09T09:08:51.421Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/24/d8/982ed84bba190c4709129594a1d5ae600cec43d962da6bbdce73775208f8/django_dynamic_filenames-1.4.0-py3-none-any.whl", hash = "sha256:afbda639b0e54ab3ed7dfed60ed9b388143c07c8cc3b7a33f9904a9696d9de83", size = 5305, upload-time = "2024-10-09T09:08:49.461Z" },
 ]
 
 [[package]]
