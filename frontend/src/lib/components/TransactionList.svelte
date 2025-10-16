@@ -1,4 +1,3 @@
-<!-- src/lib/components/TransactionList.svelte -->
 <script lang="ts">
 	import { format, parseISO, isSameDay } from 'date-fns';
 	import {

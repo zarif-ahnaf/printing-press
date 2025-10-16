@@ -52,7 +52,6 @@
 	let selectedUserId: number | null = $state<number | null>(null);
 	let users = $state<APIUser[]>([]);
 	let userSearch = $state('');
-	let processingFiles = $state<string[]>([]);
 	let isLoadingUsers = $state(false);
 	let isGlobalDragOver = $state(false);
 
@@ -60,6 +59,10 @@
 	let isDuplicateDialogOpen = $state(false);
 	let duplicateCount = $state(2);
 	let fileToDuplicate: PDFFile | null = $state(null);
+
+	// Delete confirmation dialog state
+	let isDeleteDialogOpen = $state(false);
+	let fileToDelete: PDFFile | null = $state(null);
 
 	interface APIUser {
 		id: number;
@@ -234,22 +237,34 @@
 		URL.revokeObjectURL(url);
 	}
 
-	function deleteFile(pdfFile: PDFFile) {
-		if (!confirm(`Delete "${pdfFile.file.name}"? This cannot be undone.`)) return;
+	function openDeleteDialog(pdfFile: PDFFile) {
+		fileToDelete = pdfFile;
+		isDeleteDialogOpen = true;
+	}
 
-		if (pdfFile.previewUrl) {
-			URL.revokeObjectURL(pdfFile.previewUrl);
+	function confirmDelete() {
+		if (!fileToDelete) return;
+
+		if (fileToDelete.previewUrl) {
+			URL.revokeObjectURL(fileToDelete.previewUrl);
 		}
 
-		files = files.filter((f) => f.id !== pdfFile.id);
-		if (selectedPdf?.id === pdfFile.id) {
+		files = files.filter((f) => f.id !== fileToDelete!.id);
+		if (selectedPdf?.id === fileToDelete.id) {
 			selectedPdf = null;
 			isDialogOpen = false;
 		}
 		toast.success('File deleted', {
-			description: pdfFile.file.name,
+			description: fileToDelete.file.name,
 			duration: 2000
 		});
+
+		closeDeleteDialog();
+	}
+
+	function closeDeleteDialog() {
+		isDeleteDialogOpen = false;
+		fileToDelete = null;
 	}
 
 	function duplicateFile(pdfFile: PDFFile) {
@@ -736,7 +751,7 @@
 						</div>
 					{/if}
 
-					<!-- Action bar with shadcn DropdownMenu -->
+					<!-- Action bar -->
 					<div
 						class="absolute right-0 bottom-0 left-0 flex justify-between bg-background/90 p-2 opacity-0 backdrop-blur transition-opacity group-hover:opacity-100"
 					>
@@ -774,7 +789,7 @@
 							class="h-7 w-7"
 							onclick={(e) => {
 								e.stopPropagation();
-								deleteFile(pdfFile);
+								openDeleteDialog(pdfFile);
 							}}
 						>
 							<Trash2Icon class="h-3.5 w-3.5 text-destructive" />
@@ -1003,6 +1018,29 @@
 					<div class="flex justify-end gap-2 pt-2">
 						<Button variant="outline" onclick={closeDuplicateDialog}>Cancel</Button>
 						<Button onclick={confirmDuplicate}>Add Copies</Button>
+					</div>
+				</div>
+			</DialogContent>
+		</Dialog>
+	{/if}
+
+	<!-- Delete Confirmation Dialog -->
+	{#if isDeleteDialogOpen}
+		<Dialog open={isDeleteDialogOpen} onOpenChange={closeDeleteDialog}>
+			<DialogContent class="sm:max-w-[400px]">
+				<div class="grid gap-4 py-4">
+					<div class="flex flex-col gap-2">
+						<h3 class="text-lg font-semibold text-destructive">Delete File?</h3>
+						<p class="text-sm text-muted-foreground">
+							Are you sure you want to delete "<span class="font-medium"
+								>{fileToDelete?.file.name}</span
+							>"? This action cannot be undone.
+						</p>
+					</div>
+
+					<div class="flex justify-end gap-2 pt-2">
+						<Button variant="outline" onclick={closeDeleteDialog}>Cancel</Button>
+						<Button variant="destructive" onclick={confirmDelete}>Delete</Button>
 					</div>
 				</div>
 			</DialogContent>

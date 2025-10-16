@@ -26,7 +26,7 @@ COST_PER_PAGE = Decimal("1.0")
 def queue_files(
     request: HttpRequest,
     files: File[list[UploadedFile]],
-    user_id: Form[int | None] = None,
+    user_id: Form[int] | None = None,
 ):
     current_user = request.auth
     # Determine target user

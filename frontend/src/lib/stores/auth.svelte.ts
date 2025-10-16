@@ -7,6 +7,7 @@ let isAdminUser = $state<null | boolean>(null);
 let firstName = $state<string | null>(null);
 let lastName = $state<string | null>(null);
 let email = $state<string | null>(null);
+let username = $state<string | null>(null);
 
 $effect.root(() => {
 	$effect(() => {
@@ -32,6 +33,9 @@ $effect.root(() => {
 							}
 							if (data.email) {
 								email = data.email;
+							}
+							if (data.username) {
+								username = data.username;
 							}
 						}
 					} else {
@@ -71,5 +75,10 @@ export const last_name = {
 export const user_email = {
 	get value() {
 		return email;
+	}
+};
+export const user_username = {
+	get value() {
+		return username;
 	}
 };
