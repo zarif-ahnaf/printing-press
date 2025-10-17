@@ -46,13 +46,14 @@
 	let groupedQueue = $state<Record<string, QueueItem[]>>({});
 	let loading = $state(false);
 	let error = $state<string | null>(null);
-	let merging = $state(new Set<string>());
+	let merging = $state(new Set<string>()); // per-user
+	let mergingFiles = $state(new Set<string>()); // per-file — DO NOT MUTATE DIRECTLY
 	let printing = $state(new Set<string>());
 	let previewUrl = $state<string | null>(null);
 	let previewLoading = $state(false);
 	let selectedItems = $state<Record<string, Set<string>>>({});
 
-	const mergeCache = new PdfMergeCache(10);
+	const mergeCache = new PdfMergeCache();
 
 	function groupByUser(items: QueueItem[]): Record<string, QueueItem[]> {
 		return items.reduce(
@@ -91,6 +92,8 @@
 	});
 
 	function toggleSelect(user: string, file: string, checked: boolean) {
+		// Prevent changes during merge
+		if (mergingFiles.has(file)) return;
 		const currentSet = selectedItems[user] || new Set<string>();
 		const newSet = new Set(currentSet);
 		if (checked) newSet.add(file);
@@ -105,24 +108,10 @@
 		const cacheKey = mergeCache.generateKey(files);
 		const userItems = groupedQueue[user] || [];
 
-		// Find indices of selected items
-		const selectedIndices = files
-			.map((file) => userItems.findIndex((item) => item.file === file && !item.hidden))
-			.filter((idx) => idx !== -1)
-			.sort((a, b) => a - b);
+		// ✅ REASSIGN — do NOT mutate mergingFiles
+		mergingFiles = new Set([...mergingFiles, ...files]);
 
-		if (selectedIndices.length === 0) return;
-
-		const insertIndex = selectedIndices[0];
-
-		// Hide selected originals
-		const updatedItems = [...userItems];
-		for (const idx of selectedIndices) {
-			updatedItems[idx] = { ...updatedItems[idx], hidden: true };
-		}
-		groupedQueue = { ...groupedQueue, [user]: updatedItems };
-
-		// Check cache
+		// Check cache first
 		if (mergeCache.has(cacheKey)) {
 			const cached = mergeCache.get(cacheKey)!;
 			const mergedItem: QueueItem = {
@@ -136,9 +125,19 @@
 				cacheKey
 			};
 
+			const updatedItems = userItems.map((item) =>
+				files.includes(item.file) ? { ...item, hidden: true } : item
+			);
+
+			const insertIndex = updatedItems.findIndex((item) => !item.hidden) || 0;
 			const finalItems = [...updatedItems];
 			finalItems.splice(insertIndex, 0, mergedItem);
+
 			groupedQueue = { ...groupedQueue, [user]: finalItems };
+			selectedItems[user] = new Set();
+
+			// ✅ REASSIGN — clear merging state for these files
+			mergingFiles = new Set([...mergingFiles].filter((f) => !files.includes(f)));
 			return;
 		}
 
@@ -178,7 +177,6 @@
 			const mergedBlob = await mergeRes.blob();
 			const url = URL.createObjectURL(mergedBlob);
 			const filename = `${user}_merged.pdf`;
-
 			mergeCache.set(cacheKey, url, filename);
 
 			const mergedItem: QueueItem = {
@@ -192,21 +190,25 @@
 				cacheKey
 			};
 
+			const updatedItems = userItems.map((item) =>
+				files.includes(item.file) ? { ...item, hidden: true } : item
+			);
+
+			const firstVisibleIndex = updatedItems.findIndex((item) => !item.hidden);
+			const insertIndex = firstVisibleIndex === -1 ? updatedItems.length : firstVisibleIndex;
+
 			const finalItems = [...updatedItems];
 			finalItems.splice(insertIndex, 0, mergedItem);
+
 			groupedQueue = { ...groupedQueue, [user]: finalItems };
+			selectedItems[user] = new Set();
 		} catch (err) {
 			error = err instanceof Error ? `Merge error: ${err.message}` : 'Merge failed';
-			// Revert hiding on error
-			const reverted = [...(groupedQueue[user] || [])];
-			for (const idx of selectedIndices) {
-				if (reverted[idx]?.hidden) {
-					reverted[idx] = { ...reverted[idx], hidden: false };
-				}
-			}
-			groupedQueue = { ...groupedQueue, [user]: reverted };
+			// Do NOT hide originals on error
 		} finally {
 			merging.delete(user);
+			// ✅ REASSIGN — clear merging state
+			mergingFiles = new Set([...mergingFiles].filter((f) => !files.includes(f)));
 		}
 	}
 
@@ -221,7 +223,6 @@
 			return;
 		}
 
-		// Revoke blob
 		if (fileUrl.startsWith('blob:')) {
 			URL.revokeObjectURL(fileUrl);
 		}
@@ -229,7 +230,6 @@
 		const withoutMerged = [...userItems];
 		withoutMerged.splice(mergedIndex, 1);
 
-		// Restore originals
 		const originals = mergedItem.mergedFrom.map((file) => {
 			const original = queue.find((q) => q.file === file && q.user === user);
 			return original
@@ -247,11 +247,10 @@
 		const restored = [...withoutMerged];
 		restored.splice(mergedIndex, 0, ...originals);
 		groupedQueue = { ...groupedQueue, [user]: restored };
-
 		selectedItems[user] = new Set();
 	}
 
-	// ———————— Print & Preview (unchanged) ————————
+	// ———————— Print & Preview ————————
 	async function printPdf(url: string) {
 		printing.add(url);
 		try {
@@ -304,7 +303,7 @@
 	});
 </script>
 
-<!-- Dialog and main template unchanged except count logic -->
+<!-- PDF Preview Dialog -->
 <Dialog open={!!previewUrl} onOpenChange={(open) => !open && closePreview()}>
 	<DialogContent class="flex max-h-[90vh] max-w-4xl flex-col p-0">
 		<DialogHeader class="border-b px-6 py-4">
@@ -336,6 +335,7 @@
 	</DialogContent>
 </Dialog>
 
+<!-- Main Content -->
 <div class="container mx-auto space-y-6 py-6">
 	<h1 class="text-3xl font-bold tracking-tight">PDF Processing Queue</h1>
 
@@ -398,12 +398,17 @@
 						<TableBody>
 							{#each items as item}
 								{#if !item.hidden}
-									<TableRow>
+									<TableRow
+										class="transition-opacity duration-200 ease-in-out {mergingFiles.has(item.file)
+											? 'pointer-events-none opacity-50'
+											: ''}"
+									>
 										<TableCell>
 											{#if !item.isMerged}
 												<Checkbox
 													checked={selectedItems[user]?.has(item.file) || false}
 													onCheckedChange={(checked) => toggleSelect(user, item.file, checked)}
+													disabled={mergingFiles.has(item.file)}
 												/>
 											{/if}
 										</TableCell>
@@ -424,13 +429,18 @@
 										</TableCell>
 										<TableCell class="text-right">
 											<div class="flex justify-end gap-2">
-												<Button variant="outline" size="sm" onclick={() => openPreview(item.file)}>
+												<Button
+													variant="outline"
+													size="sm"
+													onclick={() => openPreview(item.file)}
+													disabled={mergingFiles.has(item.file)}
+												>
 													<Eye class="h-4 w-4" />
 												</Button>
 												<Button
 													variant="outline"
 													size="sm"
-													disabled={printing.has(item.file)}
+													disabled={printing.has(item.file) || mergingFiles.has(item.file)}
 													onclick={() => printPdf(item.file)}
 												>
 													{#if printing.has(item.file)}

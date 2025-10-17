@@ -1,31 +1,8 @@
 export class PdfCache {
 	private cache: Record<string, { url: string; filename: string; refCount: number }>;
-	private readonly maxSize: number;
 
-	constructor(maxSize = 10) {
+	constructor() {
 		this.cache = {};
-		this.maxSize = maxSize;
-	}
-
-	private enforceSizeLimit() {
-		const keys = Object.keys(this.cache);
-		if (keys.length <= this.maxSize) return;
-
-		// Remove oldest entries with zero refCount
-		for (const key of keys) {
-			if (this.cache[key].refCount <= 0) {
-				URL.revokeObjectURL(this.cache[key].url);
-				delete this.cache[key];
-				if (Object.keys(this.cache).length <= this.maxSize) break;
-			}
-		}
-
-		// If still over limit, remove oldest (even if in use — rare)
-		if (Object.keys(this.cache).length > this.maxSize) {
-			const oldestKey = keys[0];
-			URL.revokeObjectURL(this.cache[oldestKey].url);
-			delete this.cache[oldestKey];
-		}
 	}
 
 	generateKey(fileUrls: string[]): string {
@@ -42,7 +19,6 @@ export class PdfCache {
 	}
 
 	set(key: string, url: string, filename: string): void {
-		this.enforceSizeLimit();
 		this.cache[key] = { url, filename, refCount: 0 };
 	}
 
