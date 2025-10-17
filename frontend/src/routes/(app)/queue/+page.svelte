@@ -45,6 +45,8 @@
 	let mergeError = $state('');
 	let showMerged = $state(false);
 
+	const getUnmergedFiles = () => queue.filter((f) => !f.is_merged);
+
 	const fetchQueue = async () => {
 		try {
 			isLoading = true;
@@ -65,6 +67,7 @@
 					Authorization: `Bearer ${token.value}`
 				}
 			});
+			console.log(await response.json());
 
 			if (!response.ok) {
 				throw new Error(`Failed to fetch queue: ${response.status}`);
@@ -202,7 +205,7 @@
 			isMergingAll = true;
 			mergeError = '';
 
-			const unmergedFiles = queue.filter((f) => !f.is_merged);
+			const unmergedFiles = getUnmergedFiles();
 			if (unmergedFiles.length < 2) {
 				toast.error('Merge Failed', {
 					description: 'Need at least 2 unmerged PDFs to merge'
@@ -341,12 +344,8 @@
 						</Button>
 					{/if}
 
-					{#if is_admin_user.value && queue.some((f) => !f.is_merged)}
-						<Button
-							onclick={mergeAllPDFs}
-							disabled={isMergingAll || queue.filter((f) => !f.is_merged).length < 2}
-							variant="default"
-						>
+					{#if is_admin_user.value && getUnmergedFiles().length >= 2}
+						<Button onclick={mergeAllPDFs} disabled={isMergingAll} variant="default">
 							{isMergingAll ? 'Merging All...' : 'Merge All PDFs'}
 							<Merge class="ml-2 h-4 w-4" />
 						</Button>
@@ -397,13 +396,13 @@
 										<TableHead class="w-[50px]">
 											<div class="flex items-center justify-center">
 												<Checkbox
-													checked={queue.filter((f) => !f.is_merged).length > 0 &&
-														queue.filter((f) => !f.is_merged).every((f) => selectedFiles.has(f.id))}
+													checked={getUnmergedFiles().length > 0 &&
+														getUnmergedFiles().every((f) => selectedFiles.has(f.id))}
 													indeterminate={selectedFiles.size > 0 &&
-														selectedFiles.size < queue.filter((f) => !f.is_merged).length}
+														selectedFiles.size < getUnmergedFiles().length}
 													onclick={(e) => {
 														e.stopPropagation();
-														const unmerged = queue.filter((f) => !f.is_merged);
+														const unmerged = getUnmergedFiles();
 														if (unmerged.length === 0) return;
 
 														const currentlyAllSelected = unmerged.every((f) =>
@@ -442,15 +441,13 @@
 															checked={selectedFiles.has(file.id)}
 															onclick={(e) => {
 																e.stopPropagation();
-																const isSelected = selectedFiles.has(file.id);
-																selectedFiles = new Set(selectedFiles);
-																if (isSelected) {
-																	selectedFiles.delete(file.id);
+																const newSet = new Set(selectedFiles);
+																if (newSet.has(file.id)) {
+																	newSet.delete(file.id);
 																} else {
-																	selectedFiles.add(file.id);
+																	newSet.add(file.id);
 																}
-																// Reassign to trigger reactivity
-																selectedFiles = new Set(selectedFiles);
+																selectedFiles = newSet;
 															}}
 														/>
 													</div>

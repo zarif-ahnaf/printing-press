@@ -134,8 +134,7 @@ def list_queue(
 ):
     """
     Fetch all queued files for the current user.
-    Admins can optionally see all users' queues (not implemented below for simplicity;
-    extend with `?all=true` if needed).
+    Admins can optionally see all users' queues
     """
     current_user = request.auth
     queryset = Queue.objects.filter(user=current_user)
@@ -146,7 +145,7 @@ def list_queue(
     items = [
         {
             "id": item.pk,
-            "filename": item.file.name.split("/")[-1],
+            "file": request.build_absolute_uri(item.file.url),
             "processed": item.processed,
             "created_at": item.created_at.isoformat(),
         }
