@@ -15,6 +15,7 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { is_admin_user, user_username } from '$lib/stores/auth.svelte';
+	import { Checkbox } from '$lib/components/ui/checkbox';
 
 	import {
 		Dialog,
@@ -41,16 +42,27 @@
 		created_at: string;
 		is_merged: boolean;
 		merged_id?: number | null;
+		selected?: boolean;
 	};
 
 	let isLoading = $state(false);
 	let error = $state<string | null>(null);
 	let queue = $state<QueueFile[]>([]);
-	let selectedFiles = $state<Set<number>>(new Set());
 	let isMerging = $state(false);
 	let isMergingAll = $state(false);
 	let mergeError = $state('');
 	let showMerged = $state(false);
+
+	// Derived properties for UI display only
+	let allSelected = $derived(
+		queue.filter((f) => !f.is_merged).length > 0 &&
+			queue.filter((f) => !f.is_merged).every((f) => f.selected)
+	);
+	let someSelected = $derived(
+		queue.filter((f) => !f.is_merged).length > 0 &&
+			queue.filter((f) => !f.is_merged).some((f) => f.selected)
+	);
+	let selectedCount = $derived(queue.filter((f) => !f.is_merged && f.selected).length);
 
 	const fetchQueue = async () => {
 		try {
@@ -62,7 +74,6 @@
 				url = `${QUEUE_URL}${user_username.value}/`;
 			}
 
-			// Add merged filter if needed
 			if (showMerged) {
 				url += (url.includes('?') ? '&' : '?') + 'merged=true';
 			}
@@ -79,7 +90,7 @@
 			}
 
 			const data = await response.json();
-			queue = data.queue;
+			queue = data.queue.map((file: any) => ({ ...file, selected: false }));
 		} catch (err) {
 			const errorMsg = err instanceof Error ? err.message : 'An unknown error occurred';
 			error = errorMsg;
@@ -109,7 +120,11 @@
 
 			const fileIndex = queue.findIndex((f) => f.id === queueId);
 			if (fileIndex !== -1) {
-				queue[fileIndex].processed = data.processed;
+				queue = [
+					...queue.slice(0, fileIndex),
+					{ ...queue[fileIndex], processed: data.processed },
+					...queue.slice(fileIndex + 1)
+				];
 			}
 
 			toast.success(data.message);
@@ -136,9 +151,7 @@
 			}
 
 			const data = await response.json();
-
 			queue = queue.filter((f) => f.id !== queueId);
-
 			toast.success(data.message);
 		} catch (err) {
 			const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
@@ -149,7 +162,9 @@
 	};
 
 	const mergeSelectedPDFs = async () => {
-		if (selectedFiles.size < 2) {
+		const selectedFiles = queue.filter((f) => !f.is_merged && f.selected);
+
+		if (selectedFiles.length < 2) {
 			mergeError = 'Please select at least 2 files to merge';
 			toast.error(mergeError);
 			return;
@@ -160,16 +175,11 @@
 			mergeError = '';
 
 			const formData = new FormData();
-			selectedFiles.forEach((id) => {
-				const file = queue.find((f) => f.id === id);
-				if (file) {
-					// In a real implementation, we would need to get the actual file content
-					// For now, we'll simulate by creating a dummy file
-					const dummyFile = new File([new Blob([''], { type: 'application/pdf' })], file.filename, {
-						type: 'application/pdf'
-					});
-					formData.append('files', dummyFile);
-				}
+			selectedFiles.forEach((file) => {
+				const dummyFile = new File([new Blob([''], { type: 'application/pdf' })], file.filename, {
+					type: 'application/pdf'
+				});
+				formData.append('files', dummyFile);
 			});
 
 			const response = await fetch('/api/merge/pdf/', {
@@ -184,7 +194,6 @@
 				throw new Error(`Failed to merge PDFs: ${response.status}`);
 			}
 
-			// Handle the merged PDF
 			const blob = await response.blob();
 			const url = window.URL.createObjectURL(blob);
 			const a = document.createElement('a');
@@ -199,7 +208,7 @@
 				description: 'PDFs have been merged successfully'
 			});
 
-			selectedFiles = new Set(); // Clear selection
+			queue = queue.map((file) => ({ ...file, selected: false }));
 			await fetchQueue();
 		} catch (err) {
 			const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
@@ -217,10 +226,8 @@
 			isMergingAll = true;
 			mergeError = '';
 
-			// Get all non-merged PDF IDs
-			const fileIds = queue.filter((f) => !f.is_merged).map((f) => f.id);
-
-			if (fileIds.length < 2) {
+			const unmergedFiles = queue.filter((f) => !f.is_merged);
+			if (unmergedFiles.length < 2) {
 				toast.error('Merge Failed', {
 					description: 'Need at least 2 unmerged PDFs to merge'
 				});
@@ -228,14 +235,11 @@
 			}
 
 			const formData = new FormData();
-			fileIds.forEach((id) => {
-				const file = queue.find((f) => f.id === id);
-				if (file) {
-					const dummyFile = new File([new Blob([''], { type: 'application/pdf' })], file.filename, {
-						type: 'application/pdf'
-					});
-					formData.append('files', dummyFile);
-				}
+			unmergedFiles.forEach((file) => {
+				const dummyFile = new File([new Blob([''], { type: 'application/pdf' })], file.filename, {
+					type: 'application/pdf'
+				});
+				formData.append('files', dummyFile);
 			});
 
 			const response = await fetch('/api/merge/pdf/', {
@@ -250,7 +254,6 @@
 				throw new Error(`Failed to merge all PDFs: ${response.status}`);
 			}
 
-			// Handle the merged PDF
 			const blob = await response.blob();
 			const url = window.URL.createObjectURL(blob);
 			const a = document.createElement('a');
@@ -292,16 +295,11 @@
 
 			const blob = await response.blob();
 			const url = window.URL.createObjectURL(blob);
-
-			// Open a new window with the PDF
 			const printWindow = window.open(url, '_blank');
 
-			// Wait for the window to load, then trigger print
 			printWindow?.addEventListener('load', () => {
 				printWindow?.focus();
 				printWindow?.print();
-
-				// Clean up after printing
 				setTimeout(() => {
 					printWindow?.close();
 					window.URL.revokeObjectURL(url);
@@ -319,16 +317,32 @@
 		}
 	};
 
+	const toggleSelectAll = () => {
+		// Always compute current state from actual queue
+		const unmergedFiles = queue.filter((f) => !f.is_merged);
+		if (unmergedFiles.length === 0) return;
+
+		const currentlyAllSelected = unmergedFiles.every((f) => f.selected);
+		const newSelectedState = !currentlyAllSelected;
+
+		// Update only unmerged files
+		queue = queue.map((file) => {
+			if (!file.is_merged) {
+				return { ...file, selected: newSelectedState };
+			}
+			return file;
+		});
+	};
+
 	const toggleFileSelection = (id: number) => {
-		// Create a new Set instance to ensure reactivity
-		selectedFiles = new Set(selectedFiles);
-		if (selectedFiles.has(id)) {
-			selectedFiles.delete(id);
-		} else {
-			selectedFiles.add(id);
+		const fileIndex = queue.findIndex((f) => f.id === id);
+		if (fileIndex !== -1 && !queue[fileIndex].is_merged) {
+			queue = [
+				...queue.slice(0, fileIndex),
+				{ ...queue[fileIndex], selected: !queue[fileIndex].selected },
+				...queue.slice(fileIndex + 1)
+			];
 		}
-		// Reassign to trigger reactivity
-		selectedFiles = new Set(selectedFiles);
 	};
 
 	const toggleMergedView = () => {
@@ -374,7 +388,7 @@
 						</div>
 					{/if}
 
-					{#if selectedFiles.size > 0 && is_admin_user.value}
+					{#if selectedCount > 0 && is_admin_user.value}
 						<Button onclick={mergeSelectedPDFs} disabled={isMerging}>
 							{isMerging ? 'Merging...' : 'Merge Selected'}
 							<Merge class="ml-2 h-4 w-4" />
@@ -420,9 +434,15 @@
 				<div class="space-y-6">
 					{#if is_admin_user.value}
 						<div class="mb-4 flex items-center gap-2">
-							<span class="text-sm font-medium">Selected: {selectedFiles.size} files</span>
-							{#if selectedFiles.size > 0}
-								<Button variant="ghost" size="sm" onclick={() => (selectedFiles = new Set())}>
+							<span class="text-sm font-medium">Selected: {selectedCount} files</span>
+							{#if selectedCount > 0}
+								<Button
+									variant="ghost"
+									size="sm"
+									onclick={() => {
+										queue = queue.map((file) => ({ ...file, selected: false }));
+									}}
+								>
 									Clear Selection
 								</Button>
 							{/if}
@@ -435,22 +455,13 @@
 								<TableRow class="bg-muted/40">
 									{#if is_admin_user.value}
 										<TableHead class="w-[50px]">
-											<input
-												type="checkbox"
-												checked={queue.filter((f) => !f.is_merged).length > 0 &&
-													queue.filter((f) => !f.is_merged).every((f) => selectedFiles.has(f.id))}
-												onchange={(e) => {
-													const checked = (e.target as HTMLInputElement).checked;
-													const unmergedQueue = queue.filter((f) => !f.is_merged);
-													if (checked) {
-														// Create new Set with all unmerged file IDs
-														const newSet = new Set(unmergedQueue.map((f) => f.id));
-														selectedFiles = newSet;
-													} else {
-														selectedFiles = new Set();
-													}
-												}}
-											/>
+											<div class="flex items-center justify-center">
+												<Checkbox
+													checked={allSelected}
+													indeterminate={someSelected && !allSelected}
+													onchange={toggleSelectAll}
+												/>
+											</div>
 										</TableHead>
 									{/if}
 									<TableHead class="w-[70px] font-medium">ID</TableHead>
@@ -470,19 +481,12 @@
 										{#if is_admin_user.value}
 											<TableCell>
 												{#if !file.is_merged}
-													<input
-														type="checkbox"
-														checked={selectedFiles.has(file.id)}
-														onchange={() => {
-															selectedFiles = new Set(selectedFiles); // Create new instance
-															if (selectedFiles.has(file.id)) {
-																selectedFiles.delete(file.id);
-															} else {
-																selectedFiles.add(file.id);
-															}
-															selectedFiles = new Set(selectedFiles); // Reassign to trigger reactivity
-														}}
-													/>
+													<div class="flex items-center justify-center">
+														<Checkbox
+															checked={file.selected}
+															onchange={() => toggleFileSelection(file.id)}
+														/>
+													</div>
 												{:else}
 													<span class="text-xs text-muted-foreground">Merged</span>
 												{/if}
@@ -552,8 +556,15 @@
 														{#if !file.is_merged}
 															<DropdownMenuItem
 																onclick={() => {
-																	selectedFiles = new Set(); // Clear first
-																	selectedFiles.add(file.id);
+																	queue = queue.map((f) => ({ ...f, selected: false }));
+																	const currentFileIndex = queue.findIndex((f) => f.id === file.id);
+																	if (currentFileIndex !== -1) {
+																		queue = [
+																			...queue.slice(0, currentFileIndex),
+																			{ ...queue[currentFileIndex], selected: true },
+																			...queue.slice(currentFileIndex + 1)
+																		];
+																	}
 																	mergeSelectedPDFs();
 																}}
 															>
