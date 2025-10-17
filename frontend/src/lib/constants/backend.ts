@@ -12,3 +12,4 @@ export var QUEUE_URL = `${API_URL}/queue/`;
 export var PDF_CONVERT_URL = `${API_URL}/convert/pdf/`;
 export var ALL_USER_ENDPOINT = `${API_URL}/users/`;
 export var USER_ENDPOINT = `${API_URL}/user/`;
+export var MERGE_ENDPOINT = `${API_URL}/merge/pdf/`;

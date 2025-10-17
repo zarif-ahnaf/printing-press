@@ -1,13 +1,13 @@
 from datetime import datetime
-
 from ninja import Schema
 
 
 class QueueFileResponse(Schema):
     id: int
-    filename: str
+    file: str
     processed: bool
     created_at: datetime
+    user: str
 
 
 class QueueUploadResponse(Schema):

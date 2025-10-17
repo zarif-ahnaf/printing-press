@@ -26,3 +26,27 @@ def admin_required(view_func):
         return view_func(request, *args, **kwargs)
 
     return wrapper
+
+
+def login_required(view_func):
+    """
+    Decorator to restrict a Ninja view to authenticated users only.
+
+    Assumes:
+      - The request is authenticated (e.g., via AuthBearer)
+      - request.auth is a Django User instance
+    """
+
+    @wraps(view_func)
+    def wrapper(request: HttpRequest, *args, **kwargs):
+        user = request.auth
+
+        if not hasattr(user, "is_authenticated") or isinstance(user, AnonymousUser):
+            raise HttpError(401, "Authentication required.")
+
+        if not user.is_authenticated:
+            raise HttpError(401, "Authentication required.")
+
+        return view_func(request, *args, **kwargs)
+
+    return wrapper
