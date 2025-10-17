@@ -148,6 +148,7 @@ def list_queue(
             "file": request.build_absolute_uri(item.file.url),
             "processed": item.processed,
             "created_at": item.created_at.isoformat(),
+            "user": item.user.username,
         }
         for item in queryset
     ]

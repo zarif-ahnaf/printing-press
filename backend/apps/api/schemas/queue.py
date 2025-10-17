@@ -7,6 +7,7 @@ class QueueFileResponse(Schema):
     file: str
     processed: bool
     created_at: datetime
+    user: str
 
 
 class QueueUploadResponse(Schema):
