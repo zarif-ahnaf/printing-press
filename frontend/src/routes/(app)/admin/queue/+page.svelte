@@ -24,7 +24,7 @@
 	import { Checkbox } from '$lib/components/ui/checkbox';
 
 	// Icons
-	import { FileText, Printer, Merge, Loader2, Eye, Download, X } from 'lucide-svelte';
+	import { FileText, Printer, Merge, LoaderCircle, Eye, X } from 'lucide-svelte';
 	import { MERGE_ENDPOINT, QUEUE_URL } from '$lib/constants/backend';
 	import { token } from '$lib/stores/token.svelte';
 	import { PdfCache as PdfMergeCache } from './pdf_cache';
@@ -210,17 +210,22 @@
 		}
 	}
 
-	function unmerge(user: string, fileUrl: string, cacheKey?: string) {
+	function unmerge(user: string, fileUrl: string) {
 		const userItems = groupedQueue[user] || [];
 		const mergedIndex = userItems.findIndex((item) => item.file === fileUrl && item.isMerged);
-		if (mergedIndex === -1 || !userItems[mergedIndex].mergedFrom) return;
+		if (mergedIndex === -1) return;
+
+		const mergedItem = userItems[mergedIndex];
+		if (!mergedItem.mergedFrom) {
+			console.warn('Merged item missing mergedFrom:', mergedItem);
+			return;
+		}
 
 		// Revoke blob
 		if (fileUrl.startsWith('blob:')) {
 			URL.revokeObjectURL(fileUrl);
 		}
 
-		const mergedItem = userItems[mergedIndex];
 		const withoutMerged = [...userItems];
 		withoutMerged.splice(mergedIndex, 1);
 
@@ -244,10 +249,6 @@
 		groupedQueue = { ...groupedQueue, [user]: restored };
 
 		selectedItems[user] = new Set();
-
-		if (cacheKey) {
-			// Keep cache — allow reuse
-		}
 	}
 
 	// ———————— Print & Preview (unchanged) ————————
@@ -312,7 +313,7 @@
 		<div class="flex-1 overflow-hidden bg-muted/30">
 			{#if previewLoading}
 				<div class="flex h-full items-center justify-center">
-					<Loader2 class="h-8 w-8 animate-spin text-primary" />
+					<LoaderCircle class="h-8 w-8 animate-spin text-primary" />
 				</div>
 			{:else if previewUrl}
 				<embed
@@ -346,7 +347,7 @@
 
 	{#if loading}
 		<div class="flex h-32 items-center justify-center">
-			<Loader2 class="h-8 w-8 animate-spin text-primary" />
+			<LoaderCircle class="h-8 w-8 animate-spin text-primary" />
 		</div>
 	{:else if Object.keys(groupedQueue).length === 0}
 		<div class="py-12 text-center">
@@ -375,7 +376,7 @@
 							onclick={() => mergePdfs(user)}
 						>
 							{#if merging.has(user)}
-								<Loader2 class="mr-2 h-4 w-4 animate-spin" />
+								<LoaderCircle class="mr-2 h-4 w-4 animate-spin" />
 								Merging...
 							{:else}
 								<Merge class="mr-2 h-4 w-4" />
@@ -433,7 +434,7 @@
 													onclick={() => printPdf(item.file)}
 												>
 													{#if printing.has(item.file)}
-														<Loader2 class="h-4 w-4 animate-spin" />
+														<LoaderCircle class="h-4 w-4 animate-spin" />
 													{:else}
 														<Printer class="h-4 w-4" />
 													{/if}
@@ -442,7 +443,7 @@
 													<Button
 														variant="destructive"
 														size="icon"
-														onclick={() => unmerge(user, item.file, item.cacheKey)}
+														onclick={() => unmerge(user, item.file)}
 													>
 														<X class="h-4 w-4" />
 													</Button>
