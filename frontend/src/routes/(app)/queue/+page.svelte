@@ -12,18 +12,9 @@
 	import { Badge } from '$lib/components/ui/badge';
 	import { Alert, AlertDescription } from '$lib/components/ui/alert';
 	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
 	import { is_admin_user, user_username } from '$lib/stores/auth.svelte';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 
-	import {
-		Dialog,
-		DialogContent,
-		DialogHeader,
-		DialogTitle,
-		DialogTrigger
-	} from '$lib/components/ui/dialog';
 	import {
 		DropdownMenu,
 		DropdownMenuContent,
@@ -31,9 +22,10 @@
 		DropdownMenuTrigger
 	} from '$lib/components/ui/dropdown-menu';
 	import { toast } from 'svelte-sonner';
-	import { CheckCircle, Printer, Trash2, Download, Merge, Split } from 'lucide-svelte';
+	import { CheckCircle, Printer, Trash2, Merge, Split } from 'lucide-svelte';
 	import { onMount } from 'svelte';
 	import { QUEUE_URL } from '$lib/constants/backend';
+	import { token } from '$lib/stores/token.svelte';
 
 	type QueueFile = {
 		id: number;
@@ -81,7 +73,7 @@
 			const response = await fetch(url, {
 				method: 'GET',
 				headers: {
-					Authorization: `Bearer ${localStorage.getItem('token')}`
+					Authorization: `Bearer ${token.value}`
 				}
 			});
 
@@ -107,7 +99,7 @@
 			const response = await fetch(`/api/queue/${queueId}/processed`, {
 				method: 'POST',
 				headers: {
-					Authorization: `Bearer ${localStorage.getItem('token')}`,
+					Authorization: `Bearer ${token.value}`,
 					'Content-Type': 'application/json'
 				}
 			});
@@ -117,7 +109,6 @@
 			}
 
 			const data = await response.json();
-
 			const fileIndex = queue.findIndex((f) => f.id === queueId);
 			if (fileIndex !== -1) {
 				queue = [
@@ -126,7 +117,6 @@
 					...queue.slice(fileIndex + 1)
 				];
 			}
-
 			toast.success(data.message);
 		} catch (err) {
 			const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
@@ -141,7 +131,7 @@
 			const response = await fetch(`/api/queue/${queueId}/processed`, {
 				method: 'DELETE',
 				headers: {
-					Authorization: `Bearer ${localStorage.getItem('token')}`,
+					Authorization: `Bearer ${token.value}`,
 					'Content-Type': 'application/json'
 				}
 			});
@@ -175,17 +165,28 @@
 			mergeError = '';
 
 			const formData = new FormData();
+<<<<<<< Updated upstream
 			selectedFiles.forEach((file) => {
 				const dummyFile = new File([new Blob([''], { type: 'application/pdf' })], file.filename, {
 					type: 'application/pdf'
 				});
 				formData.append('files', dummyFile);
+=======
+			selectedFiles.forEach((id) => {
+				const file = queue.find((f) => f.id === id);
+				if (file) {
+					const dummyFile = new File([new Blob([''], { type: 'application/pdf' })], file.filename, {
+						type: 'application/pdf'
+					});
+					formData.append('files', dummyFile);
+				}
+>>>>>>> Stashed changes
 			});
 
 			const response = await fetch('/api/merge/pdf/', {
 				method: 'POST',
 				headers: {
-					Authorization: `Bearer ${localStorage.getItem('token')}`
+					Authorization: `Bearer ${token.value}`
 				},
 				body: formData
 			});
@@ -208,7 +209,11 @@
 				description: 'PDFs have been merged successfully'
 			});
 
+<<<<<<< Updated upstream
 			queue = queue.map((file) => ({ ...file, selected: false }));
+=======
+			selectedFiles = new Set();
+>>>>>>> Stashed changes
 			await fetchQueue();
 		} catch (err) {
 			const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
@@ -245,7 +250,7 @@
 			const response = await fetch('/api/merge/pdf/', {
 				method: 'POST',
 				headers: {
-					Authorization: `Bearer ${localStorage.getItem('token')}`
+					Authorization: `Bearer ${token.value}`
 				},
 				body: formData
 			});
@@ -285,7 +290,7 @@
 			const response = await fetch(`/api/queue/${queueId}/processed`, {
 				method: 'GET',
 				headers: {
-					Authorization: `Bearer ${localStorage.getItem('token')}`
+					Authorization: `Bearer ${token.value}`
 				}
 			});
 
@@ -317,6 +322,7 @@
 		}
 	};
 
+<<<<<<< Updated upstream
 	const toggleSelectAll = () => {
 		// Always compute current state from actual queue
 		const unmergedFiles = queue.filter((f) => !f.is_merged);
@@ -345,6 +351,8 @@
 		}
 	};
 
+=======
+>>>>>>> Stashed changes
 	const toggleMergedView = () => {
 		showMerged = !showMerged;
 		fetchQueue();
@@ -376,16 +384,14 @@
 				<CardTitle>Print Queue</CardTitle>
 				<div class="flex gap-2">
 					{#if is_admin_user.value}
-						<div class="flex items-center gap-2">
-							<Button variant="outline" size="sm" onclick={toggleMergedView}>
-								{#if showMerged}
-									<Split class="mr-2 h-4 w-4" />
-								{:else}
-									<Merge class="mr-2 h-4 w-4" />
-								{/if}
-								{showMerged ? 'Show Unmerged' : 'Show Merged'}
-							</Button>
-						</div>
+						<Button variant="outline" size="sm" onclick={toggleMergedView}>
+							{#if showMerged}
+								<Split class="mr-2 h-4 w-4" />
+							{:else}
+								<Merge class="mr-2 h-4 w-4" />
+							{/if}
+							{showMerged ? 'Show Unmerged' : 'Show Merged'}
+						</Button>
 					{/if}
 
 					{#if selectedCount > 0 && is_admin_user.value}
@@ -457,9 +463,31 @@
 										<TableHead class="w-[50px]">
 											<div class="flex items-center justify-center">
 												<Checkbox
+<<<<<<< Updated upstream
 													checked={allSelected}
 													indeterminate={someSelected && !allSelected}
 													onchange={toggleSelectAll}
+=======
+													checked={queue.filter((f) => !f.is_merged).length > 0 &&
+														queue.filter((f) => !f.is_merged).every((f) => selectedFiles.has(f.id))}
+													indeterminate={selectedFiles.size > 0 &&
+														selectedFiles.size < queue.filter((f) => !f.is_merged).length}
+													onclick={(e) => {
+														e.stopPropagation();
+														const unmerged = queue.filter((f) => !f.is_merged);
+														if (unmerged.length === 0) return;
+
+														const currentlyAllSelected = unmerged.every((f) =>
+															selectedFiles.has(f.id)
+														);
+
+														if (currentlyAllSelected) {
+															selectedFiles = new Set(); // Deselect all
+														} else {
+															selectedFiles = new Set(unmerged.map((f) => f.id)); // Select all unmerged
+														}
+													}}
+>>>>>>> Stashed changes
 												/>
 											</div>
 										</TableHead>
@@ -483,8 +511,24 @@
 												{#if !file.is_merged}
 													<div class="flex items-center justify-center">
 														<Checkbox
+<<<<<<< Updated upstream
 															checked={file.selected}
 															onchange={() => toggleFileSelection(file.id)}
+=======
+															checked={selectedFiles.has(file.id)}
+															onclick={(e) => {
+																e.stopPropagation();
+																const isSelected = selectedFiles.has(file.id);
+																selectedFiles = new Set(selectedFiles);
+																if (isSelected) {
+																	selectedFiles.delete(file.id);
+																} else {
+																	selectedFiles.add(file.id);
+																}
+																// Reassign to trigger reactivity
+																selectedFiles = new Set(selectedFiles);
+															}}
+>>>>>>> Stashed changes
 														/>
 													</div>
 												{:else}
@@ -556,6 +600,7 @@
 														{#if !file.is_merged}
 															<DropdownMenuItem
 																onclick={() => {
+<<<<<<< Updated upstream
 																	queue = queue.map((f) => ({ ...f, selected: false }));
 																	const currentFileIndex = queue.findIndex((f) => f.id === file.id);
 																	if (currentFileIndex !== -1) {
@@ -565,6 +610,9 @@
 																			...queue.slice(currentFileIndex + 1)
 																		];
 																	}
+=======
+																	selectedFiles = new Set([file.id]);
+>>>>>>> Stashed changes
 																	mergeSelectedPDFs();
 																}}
 															>
