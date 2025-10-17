@@ -14,7 +14,6 @@
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
-	import { Checkbox } from '$lib/components/ui/checkbox'; // Import shadcn Checkbox
 	import { is_admin_user, user_username } from '$lib/stores/auth.svelte';
 
 	import {
@@ -47,7 +46,7 @@
 	let isLoading = $state(false);
 	let error = $state<string | null>(null);
 	let queue = $state<QueueFile[]>([]);
-	let selectedFiles = $state(new Set<number>());
+	let selectedFiles = $state<Set<number>>(new Set());
 	let isMerging = $state(false);
 	let isMergingAll = $state(false);
 	let mergeError = $state('');
@@ -200,7 +199,7 @@
 				description: 'PDFs have been merged successfully'
 			});
 
-			selectedFiles = new Set();
+			selectedFiles = new Set(); // Clear selection
 			await fetchQueue();
 		} catch (err) {
 			const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
@@ -321,13 +320,15 @@
 	};
 
 	const toggleFileSelection = (id: number) => {
-		const newSet = new Set(selectedFiles);
-		if (newSet.has(id)) {
-			newSet.delete(id);
+		// Create a new Set instance to ensure reactivity
+		selectedFiles = new Set(selectedFiles);
+		if (selectedFiles.has(id)) {
+			selectedFiles.delete(id);
 		} else {
-			newSet.add(id);
+			selectedFiles.add(id);
 		}
-		selectedFiles = newSet;
+		// Reassign to trigger reactivity
+		selectedFiles = new Set(selectedFiles);
 	};
 
 	const toggleMergedView = () => {
@@ -434,15 +435,16 @@
 								<TableRow class="bg-muted/40">
 									{#if is_admin_user.value}
 										<TableHead class="w-[50px]">
-											<Checkbox
+											<input
+												type="checkbox"
 												checked={queue.filter((f) => !f.is_merged).length > 0 &&
 													queue.filter((f) => !f.is_merged).every((f) => selectedFiles.has(f.id))}
-												on:change={(e) => {
-													const checked = e.target.checked;
+												onchange={(e) => {
+													const checked = (e.target as HTMLInputElement).checked;
 													const unmergedQueue = queue.filter((f) => !f.is_merged);
 													if (checked) {
-														const newSet = new Set(selectedFiles);
-														unmergedQueue.forEach((f) => newSet.add(f.id));
+														// Create new Set with all unmerged file IDs
+														const newSet = new Set(unmergedQueue.map((f) => f.id));
 														selectedFiles = newSet;
 													} else {
 														selectedFiles = new Set();
@@ -468,9 +470,18 @@
 										{#if is_admin_user.value}
 											<TableCell>
 												{#if !file.is_merged}
-													<Checkbox
+													<input
+														type="checkbox"
 														checked={selectedFiles.has(file.id)}
-														on:change={() => toggleFileSelection(file.id)}
+														onchange={() => {
+															selectedFiles = new Set(selectedFiles); // Create new instance
+															if (selectedFiles.has(file.id)) {
+																selectedFiles.delete(file.id);
+															} else {
+																selectedFiles.add(file.id);
+															}
+															selectedFiles = new Set(selectedFiles); // Reassign to trigger reactivity
+														}}
 													/>
 												{:else}
 													<span class="text-xs text-muted-foreground">Merged</span>
@@ -541,9 +552,8 @@
 														{#if !file.is_merged}
 															<DropdownMenuItem
 																onclick={() => {
-																	const newSet = new Set();
-																	newSet.add(file.id);
-																	selectedFiles = newSet;
+																	selectedFiles = new Set(); // Clear first
+																	selectedFiles.add(file.id);
 																	mergeSelectedPDFs();
 																}}
 															>
