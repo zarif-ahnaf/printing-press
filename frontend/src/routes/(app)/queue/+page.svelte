@@ -34,27 +34,16 @@
 		created_at: string;
 		is_merged: boolean;
 		merged_id?: number | null;
-		selected?: boolean;
 	};
 
 	let isLoading = $state(false);
 	let error = $state<string | null>(null);
 	let queue = $state<QueueFile[]>([]);
+	let selectedFiles = $state<Set<number>>(new Set());
 	let isMerging = $state(false);
 	let isMergingAll = $state(false);
 	let mergeError = $state('');
 	let showMerged = $state(false);
-
-	// Derived properties for UI display only
-	let allSelected = $derived(
-		queue.filter((f) => !f.is_merged).length > 0 &&
-			queue.filter((f) => !f.is_merged).every((f) => f.selected)
-	);
-	let someSelected = $derived(
-		queue.filter((f) => !f.is_merged).length > 0 &&
-			queue.filter((f) => !f.is_merged).some((f) => f.selected)
-	);
-	let selectedCount = $derived(queue.filter((f) => !f.is_merged && f.selected).length);
 
 	const fetchQueue = async () => {
 		try {
@@ -82,7 +71,7 @@
 			}
 
 			const data = await response.json();
-			queue = data.queue.map((file: any) => ({ ...file, selected: false }));
+			queue = data.queue;
 		} catch (err) {
 			const errorMsg = err instanceof Error ? err.message : 'An unknown error occurred';
 			error = errorMsg;
@@ -111,11 +100,7 @@
 			const data = await response.json();
 			const fileIndex = queue.findIndex((f) => f.id === queueId);
 			if (fileIndex !== -1) {
-				queue = [
-					...queue.slice(0, fileIndex),
-					{ ...queue[fileIndex], processed: data.processed },
-					...queue.slice(fileIndex + 1)
-				];
+				queue[fileIndex].processed = data.processed;
 			}
 			toast.success(data.message);
 		} catch (err) {
@@ -152,9 +137,7 @@
 	};
 
 	const mergeSelectedPDFs = async () => {
-		const selectedFiles = queue.filter((f) => !f.is_merged && f.selected);
-
-		if (selectedFiles.length < 2) {
+		if (selectedFiles.size < 2) {
 			mergeError = 'Please select at least 2 files to merge';
 			toast.error(mergeError);
 			return;
@@ -165,13 +148,6 @@
 			mergeError = '';
 
 			const formData = new FormData();
-<<<<<<< Updated upstream
-			selectedFiles.forEach((file) => {
-				const dummyFile = new File([new Blob([''], { type: 'application/pdf' })], file.filename, {
-					type: 'application/pdf'
-				});
-				formData.append('files', dummyFile);
-=======
 			selectedFiles.forEach((id) => {
 				const file = queue.find((f) => f.id === id);
 				if (file) {
@@ -180,7 +156,6 @@
 					});
 					formData.append('files', dummyFile);
 				}
->>>>>>> Stashed changes
 			});
 
 			const response = await fetch('/api/merge/pdf/', {
@@ -209,11 +184,7 @@
 				description: 'PDFs have been merged successfully'
 			});
 
-<<<<<<< Updated upstream
-			queue = queue.map((file) => ({ ...file, selected: false }));
-=======
 			selectedFiles = new Set();
->>>>>>> Stashed changes
 			await fetchQueue();
 		} catch (err) {
 			const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred';
@@ -322,37 +293,6 @@
 		}
 	};
 
-<<<<<<< Updated upstream
-	const toggleSelectAll = () => {
-		// Always compute current state from actual queue
-		const unmergedFiles = queue.filter((f) => !f.is_merged);
-		if (unmergedFiles.length === 0) return;
-
-		const currentlyAllSelected = unmergedFiles.every((f) => f.selected);
-		const newSelectedState = !currentlyAllSelected;
-
-		// Update only unmerged files
-		queue = queue.map((file) => {
-			if (!file.is_merged) {
-				return { ...file, selected: newSelectedState };
-			}
-			return file;
-		});
-	};
-
-	const toggleFileSelection = (id: number) => {
-		const fileIndex = queue.findIndex((f) => f.id === id);
-		if (fileIndex !== -1 && !queue[fileIndex].is_merged) {
-			queue = [
-				...queue.slice(0, fileIndex),
-				{ ...queue[fileIndex], selected: !queue[fileIndex].selected },
-				...queue.slice(fileIndex + 1)
-			];
-		}
-	};
-
-=======
->>>>>>> Stashed changes
 	const toggleMergedView = () => {
 		showMerged = !showMerged;
 		fetchQueue();
@@ -394,7 +334,7 @@
 						</Button>
 					{/if}
 
-					{#if selectedCount > 0 && is_admin_user.value}
+					{#if selectedFiles.size > 0 && is_admin_user.value}
 						<Button onclick={mergeSelectedPDFs} disabled={isMerging}>
 							{isMerging ? 'Merging...' : 'Merge Selected'}
 							<Merge class="ml-2 h-4 w-4" />
@@ -440,15 +380,9 @@
 				<div class="space-y-6">
 					{#if is_admin_user.value}
 						<div class="mb-4 flex items-center gap-2">
-							<span class="text-sm font-medium">Selected: {selectedCount} files</span>
-							{#if selectedCount > 0}
-								<Button
-									variant="ghost"
-									size="sm"
-									onclick={() => {
-										queue = queue.map((file) => ({ ...file, selected: false }));
-									}}
-								>
+							<span class="text-sm font-medium">Selected: {selectedFiles.size} files</span>
+							{#if selectedFiles.size > 0}
+								<Button variant="ghost" size="sm" onclick={() => (selectedFiles = new Set())}>
 									Clear Selection
 								</Button>
 							{/if}
@@ -463,11 +397,6 @@
 										<TableHead class="w-[50px]">
 											<div class="flex items-center justify-center">
 												<Checkbox
-<<<<<<< Updated upstream
-													checked={allSelected}
-													indeterminate={someSelected && !allSelected}
-													onchange={toggleSelectAll}
-=======
 													checked={queue.filter((f) => !f.is_merged).length > 0 &&
 														queue.filter((f) => !f.is_merged).every((f) => selectedFiles.has(f.id))}
 													indeterminate={selectedFiles.size > 0 &&
@@ -487,7 +416,6 @@
 															selectedFiles = new Set(unmerged.map((f) => f.id)); // Select all unmerged
 														}
 													}}
->>>>>>> Stashed changes
 												/>
 											</div>
 										</TableHead>
@@ -511,10 +439,6 @@
 												{#if !file.is_merged}
 													<div class="flex items-center justify-center">
 														<Checkbox
-<<<<<<< Updated upstream
-															checked={file.selected}
-															onchange={() => toggleFileSelection(file.id)}
-=======
 															checked={selectedFiles.has(file.id)}
 															onclick={(e) => {
 																e.stopPropagation();
@@ -528,7 +452,6 @@
 																// Reassign to trigger reactivity
 																selectedFiles = new Set(selectedFiles);
 															}}
->>>>>>> Stashed changes
 														/>
 													</div>
 												{:else}
@@ -600,19 +523,7 @@
 														{#if !file.is_merged}
 															<DropdownMenuItem
 																onclick={() => {
-<<<<<<< Updated upstream
-																	queue = queue.map((f) => ({ ...f, selected: false }));
-																	const currentFileIndex = queue.findIndex((f) => f.id === file.id);
-																	if (currentFileIndex !== -1) {
-																		queue = [
-																			...queue.slice(0, currentFileIndex),
-																			{ ...queue[currentFileIndex], selected: true },
-																			...queue.slice(currentFileIndex + 1)
-																		];
-																	}
-=======
 																	selectedFiles = new Set([file.id]);
->>>>>>> Stashed changes
 																	mergeSelectedPDFs();
 																}}
 															>
