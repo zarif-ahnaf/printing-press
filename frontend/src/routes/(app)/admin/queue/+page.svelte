@@ -28,7 +28,6 @@
 	import { QUEUE_URL } from '$lib/constants/backend';
 	import { token } from '$lib/stores/token.svelte';
 	import init, { merge_pdfs_wasm } from '$lib/wasm/pdf_merge';
-	import { SvelteSet } from 'svelte/reactivity';
 
 	interface QueueItem {
 		id: number;
@@ -45,7 +44,6 @@
 	let groupedQueue = $state<Record<string, QueueItem[]>>({});
 	let loading = $state(false);
 	let error = $state<string | null>(null);
-
 	let merging = $state<Record<string, boolean>>({});
 	let mergingFiles = $state<Record<string, boolean>>({});
 	let printing = $state<Record<string, boolean>>({});
@@ -53,7 +51,84 @@
 	let previewLoading = $state(false);
 	let selectedItems = $state<Record<string, Record<string, boolean>>>({});
 
-	const activeMergedBlobs = new SvelteSet<string>();
+	const activeMergedBlobs = new Set<string>();
+
+	// 🔍 Estimate available memory (in bytes)
+	function getEstimatedMemory(): number {
+		// Chromium: use performance.memory
+		if ('memory' in performance) {
+			const mem = (performance as any).memory;
+			if (mem && typeof mem.jsHeapSizeLimit === 'number') {
+				// jsHeapSizeLimit is close to total JS heap, but we want total system estimate
+				return Math.min(mem.jsHeapSizeLimit * 2, 4 * 1024 ** 3); // cap at 4GB for safety
+			}
+		}
+
+		// navigator.deviceMemory (in GB, rounded)
+		if ('deviceMemory' in navigator) {
+			const deviceMemGB = (navigator as any).deviceMemory;
+			if (typeof deviceMemGB === 'number') {
+				return deviceMemGB * 1024 ** 3;
+			}
+		}
+
+		// Conservative fallback: assume 4GB on low-end, 8GB on others
+		if (
+			'navigator' in window &&
+			'hardwareConcurrency' in navigator &&
+			(navigator as any).hardwareConcurrency <= 2
+		) {
+			return 4 * 1024 ** 3; // 4GB
+		}
+		return 8 * 1024 ** 3; // 8GB
+	}
+
+	// 🔍 Fetch size without loading full PDF
+	async function getPDFSize(url: string): Promise<number> {
+		const res = await fetch(url, {
+			method: 'HEAD',
+			headers: { Authorization: `Bearer ${token.value}` }
+		});
+		if (!res.ok) {
+			// Fallback: GET with Range to avoid full download
+			const rangeRes = await fetch(url, {
+				headers: {
+					Authorization: `Bearer ${token.value}`,
+					Range: 'bytes=0-0'
+				}
+			});
+			if (rangeRes.status === 206 || rangeRes.status === 200) {
+				const contentRange = rangeRes.headers.get('Content-Range') || '';
+				const total = contentRange.split('/').pop();
+				if (total && !isNaN(Number(total))) {
+					return Number(total);
+				}
+			}
+			throw new Error(`Cannot determine size: ${url}`);
+		}
+		const length = res.headers.get('Content-Length');
+		return length ? parseInt(length, 10) : 0;
+	}
+
+	async function fetchPdfAsUint8Array(url: string): Promise<Uint8Array> {
+		const res = await fetch(url, {
+			headers: { Authorization: `Bearer ${token.value}` }
+		});
+		if (!res.ok) throw new Error(`Failed to access: ${url}`);
+		const arrayBuffer = await res.arrayBuffer();
+		return new Uint8Array(arrayBuffer);
+	}
+
+	// 🔁 Sequential merge: merge A+B → AB, then AB+C → ABC, etc.
+	async function mergeSequentially(pdfs: Uint8Array[]): Promise<Uint8Array> {
+		let current = pdfs[0];
+		for (let i = 1; i < pdfs.length; i++) {
+			current = merge_pdfs_wasm([current, pdfs[i]]);
+			// Optional: yield to keep UI responsive
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		}
+		return current;
+	}
 
 	function groupByUser(items: QueueItem[]): Record<string, QueueItem[]> {
 		return items.reduce(
@@ -106,15 +181,6 @@
 		};
 	}
 
-	async function fetchPdfAsUint8Array(url: string): Promise<Uint8Array> {
-		const res = await fetch(url, {
-			headers: { Authorization: `Bearer ${token.value}` }
-		});
-		if (!res.ok) throw new Error(`Failed to access: ${url}`);
-		const arrayBuffer = await res.arrayBuffer();
-		return new Uint8Array(arrayBuffer);
-	}
-
 	async function mergePdfs(user: string) {
 		const files = Object.entries(selectedItems[user] || {})
 			.filter(([, checked]) => checked)
@@ -124,37 +190,55 @@
 
 		const userItems = groupedQueue[user] || [];
 
-		// Mark files as merging
 		merging = { ...merging, [user]: true };
 		mergingFiles = { ...mergingFiles };
-		for (const f of files) {
-			mergingFiles[f] = true;
-		}
+		for (const f of files) mergingFiles[f] = true;
 
 		try {
-			const fileToIndex = new Map<string, number>();
-			for (const [idx, item] of userItems.entries()) {
-				if (files.includes(item.file)) {
-					fileToIndex.set(item.file, idx);
-				}
+			// 🔍 Step 1: Estimate total size
+			let totalSize = 0;
+			try {
+				const sizePromises = files.map((url) => getPDFSize(url));
+				const sizes = await Promise.all(sizePromises);
+				totalSize = sizes.reduce((sum, s) => sum + s, 0);
+			} catch (sizeErr) {
+				console.warn('Size estimation failed, assuming safe merge:', sizeErr);
+				totalSize = 0; // skip memory check
 			}
 
+			// 🔍 Step 2: Decide merge strategy
+			const useSequential =
+				totalSize > 0 &&
+				(() => {
+					const mem = getEstimatedMemory();
+					const threshold = mem * 0.8; // 80%
+					return totalSize >= threshold;
+				})();
+
+			// Fetch all PDFs
 			const uint8Arrays: Uint8Array[] = [];
 			for (const fileUrl of files) {
 				const uint8 = await fetchPdfAsUint8Array(fileUrl);
 				uint8Arrays.push(uint8);
 			}
 
-			const pdfArray = new Array(uint8Arrays.length);
-			for (let i = 0; i < uint8Arrays.length; i++) {
-				pdfArray[i] = uint8Arrays[i];
+			// 🔀 Merge
+			let mergedBytes: Uint8Array;
+			if (useSequential && uint8Arrays.length > 1) {
+				mergedBytes = await mergeSequentially(uint8Arrays);
+			} else {
+				mergedBytes = merge_pdfs_wasm(uint8Arrays);
 			}
 
-			const mergedBytes: Uint8Array = merge_pdfs_wasm(pdfArray);
 			const mergedBlob = new Blob([mergedBytes.slice()], { type: 'application/pdf' });
 			const url = URL.createObjectURL(mergedBlob);
 			activeMergedBlobs.add(url);
 
+			// Insert in order
+			const fileToIndex = new Map<string, number>();
+			for (const [idx, item] of userItems.entries()) {
+				if (files.includes(item.file)) fileToIndex.set(item.file, idx);
+			}
 			const selectedIndices = files.map((f) => fileToIndex.get(f)!);
 			const maxIndex = Math.max(...selectedIndices);
 			const insertIndex = maxIndex + 1;
@@ -172,7 +256,6 @@
 			const updatedItems = userItems.map((item) =>
 				files.includes(item.file) ? { ...item, hidden: true } : item
 			);
-
 			const finalItems = [...updatedItems];
 			finalItems.splice(insertIndex, 0, mergedItem);
 
@@ -183,9 +266,7 @@
 		} finally {
 			merging = { ...merging, [user]: false };
 			mergingFiles = { ...mergingFiles };
-			for (const f of files) {
-				delete mergingFiles[f];
-			}
+			for (const f of files) delete mergingFiles[f];
 		}
 	}
 
@@ -200,7 +281,6 @@
 			return;
 		}
 
-		// Revoke blob only if we own it
 		if (fileUrl.startsWith('blob:') && activeMergedBlobs.has(fileUrl)) {
 			URL.revokeObjectURL(fileUrl);
 			activeMergedBlobs.delete(fileUrl);
@@ -229,6 +309,7 @@
 		selectedItems = { ...selectedItems, [user]: {} };
 	}
 
+	// --- Print & Preview (unchanged from previous memory-safe version) ---
 	async function printPdf(url: string) {
 		printing = { ...printing, [url]: true };
 		try {
@@ -300,20 +381,17 @@
 	}
 
 	onDestroy(() => {
-		// Revoke all merged blobs we created
 		for (const url of activeMergedBlobs) {
-			if (url.startsWith('blob:')) {
-				URL.revokeObjectURL(url);
-			}
+			if (url.startsWith('blob:')) URL.revokeObjectURL(url);
 		}
 		activeMergedBlobs.clear();
-
 		if (previewUrl && !previewUrl.startsWith('http')) {
 			URL.revokeObjectURL(previewUrl);
 		}
 	});
 </script>
 
+<!-- Rest of the template (Dialog + Main Content) remains identical -->
 <Dialog open={!!previewUrl} onOpenChange={(open) => !open && closePreview()}>
 	<DialogContent class="flex max-h-[90vh] max-w-4xl flex-col p-0">
 		<DialogHeader class="border-b px-6 py-4">
@@ -345,7 +423,6 @@
 	</DialogContent>
 </Dialog>
 
-<!-- Main Content -->
 <div class="container mx-auto space-y-6 py-6">
 	<h1 class="text-3xl font-bold tracking-tight">PDF Processing Queue</h1>
 
