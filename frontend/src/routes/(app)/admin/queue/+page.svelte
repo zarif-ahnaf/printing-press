@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
 
-	// UI Components
+	// UI Components (unchanged)
 	import {
 		Table,
 		TableBody,
@@ -23,11 +23,14 @@
 	} from '$lib/components/ui/dialog';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 
-	// Icons
+	// Icons (unchanged)
 	import { FileText, Printer, Merge, LoaderCircle, Eye, X } from 'lucide-svelte';
-	import { MERGE_ENDPOINT, QUEUE_URL } from '$lib/constants/backend';
+	import { QUEUE_URL } from '$lib/constants/backend';
 	import { token } from '$lib/stores/token.svelte';
 	import { PdfCache as PdfMergeCache } from './pdf_cache';
+
+	// ✅ IMPORT WASM FUNCTION
+	import { merge_pdfs_wasm } from '$lib/wasm/pdf_merge'; // Adjust path as needed
 
 	interface QueueItem {
 		id: number;
@@ -46,8 +49,8 @@
 	let groupedQueue = $state<Record<string, QueueItem[]>>({});
 	let loading = $state(false);
 	let error = $state<string | null>(null);
-	let merging = $state(new Set<string>()); // per-user
-	let mergingFiles = $state(new Set<string>()); // per-file — DO NOT MUTATE DIRECTLY
+	let merging = $state(new Set<string>());
+	let mergingFiles = $state(new Set<string>());
 	let printing = $state(new Set<string>());
 	let previewUrl = $state<string | null>(null);
 	let previewLoading = $state(false);
@@ -92,13 +95,22 @@
 	});
 
 	function toggleSelect(user: string, file: string, checked: boolean) {
-		// Prevent changes during merge
 		if (mergingFiles.has(file)) return;
 		const currentSet = selectedItems[user] || new Set<string>();
 		const newSet = new Set(currentSet);
 		if (checked) newSet.add(file);
 		else newSet.delete(file);
 		selectedItems = { ...selectedItems, [user]: newSet };
+	}
+
+	// ✅ FETCH BLOB AS UINT8ARRAY
+	async function fetchPdfAsUint8Array(url: string): Promise<Uint8Array> {
+		const res = await fetch(url, {
+			headers: { Authorization: `Bearer ${token.value}` }
+		});
+		if (!res.ok) throw new Error(`Failed to access: ${url}`);
+		const arrayBuffer = await res.arrayBuffer();
+		return new Uint8Array(arrayBuffer);
 	}
 
 	async function mergePdfs(user: string) {
@@ -108,7 +120,6 @@
 		const cacheKey = mergeCache.generateKey(files);
 		const userItems = groupedQueue[user] || [];
 
-		// ✅ REASSIGN — do NOT mutate mergingFiles
 		mergingFiles = new Set([...mergingFiles, ...files]);
 
 		// Check cache first
@@ -135,46 +146,31 @@
 
 			groupedQueue = { ...groupedQueue, [user]: finalItems };
 			selectedItems[user] = new Set();
-
-			// ✅ REASSIGN — clear merging state for these files
 			mergingFiles = new Set([...mergingFiles].filter((f) => !files.includes(f)));
 			return;
 		}
 
-		// Real merge
+		// ✅ USE WASM INSTEAD OF HTTP ENDPOINT
 		merging.add(user);
 		try {
-			const blobPromises = files.map(async (fileUrl) => {
-				const res = await fetch(fileUrl, {
-					headers: { Authorization: `Bearer ${token.value}` }
-				});
-				if (!res.ok) throw new Error(`Failed to access: ${fileUrl}`);
-				const blob = await res.blob();
-				return blob;
-			});
-
-			const fileBlobs = await Promise.all(blobPromises);
-
-			const formData = new FormData();
-			fileBlobs.forEach((blob, i) => {
-				const filename = files[i].split('/').pop() || `file_${i}.pdf`;
-				formData.append('files', blob, filename);
-			});
-
-			const mergeRes = await fetch(MERGE_ENDPOINT, {
-				method: 'POST',
-				body: formData
-			});
-
-			if (!mergeRes.ok) {
-				let errorMsg = 'Merge failed';
-				try {
-					errorMsg = await mergeRes.text();
-				} catch {}
-				throw new Error(errorMsg);
+			// Fetch PDFs as Uint8Arrays
+			const uint8Arrays: Uint8Array[] = [];
+			for (const fileUrl of files) {
+				const uint8 = await fetchPdfAsUint8Array(fileUrl);
+				uint8Arrays.push(uint8);
 			}
 
-			const mergedBlob = await mergeRes.blob();
+			// Create JS Array of Uint8Array for WASM
+			const pdfArray = new Array(uint8Arrays.length);
+			for (let i = 0; i < uint8Arrays.length; i++) {
+				pdfArray[i] = uint8Arrays[i];
+			}
+
+			// Call WASM function
+			const mergedBytes: Uint8Array = merge_pdfs_wasm(pdfArray);
+
+			// Create blob and URL
+			const mergedBlob = new Blob([mergedBytes], { type: 'application/pdf' });
 			const url = URL.createObjectURL(mergedBlob);
 			const filename = `${user}_merged.pdf`;
 			mergeCache.set(cacheKey, url, filename);
@@ -204,10 +200,8 @@
 			selectedItems[user] = new Set();
 		} catch (err) {
 			error = err instanceof Error ? `Merge error: ${err.message}` : 'Merge failed';
-			// Do NOT hide originals on error
 		} finally {
 			merging.delete(user);
-			// ✅ REASSIGN — clear merging state
 			mergingFiles = new Set([...mergingFiles].filter((f) => !files.includes(f)));
 		}
 	}
@@ -250,7 +244,7 @@
 		selectedItems[user] = new Set();
 	}
 
-	// ———————— Print & Preview ————————
+	// ———————— Print & Preview ———————— (unchanged)
 	async function printPdf(url: string) {
 		printing.add(url);
 		try {
@@ -303,7 +297,6 @@
 	});
 </script>
 
-<!-- PDF Preview Dialog -->
 <Dialog open={!!previewUrl} onOpenChange={(open) => !open && closePreview()}>
 	<DialogContent class="flex max-h-[90vh] max-w-4xl flex-col p-0">
 		<DialogHeader class="border-b px-6 py-4">
