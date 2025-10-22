@@ -1,6 +1,8 @@
 import { USER_ENDPOINT } from '$lib/constants/backend';
 import { token } from './token.svelte';
 
+let fetchState = $state<'not_fetched' | 'fetching' | 'fetched'>('not_fetched');
+
 let isLoggedInState = $state<boolean | null>(null);
 let isAdminUser = $state<null | boolean>(null);
 
@@ -12,6 +14,7 @@ let username = $state<string | null>(null);
 $effect.root(() => {
 	$effect(() => {
 		if (token.value) {
+			fetchState = 'fetching';
 			fetch(USER_ENDPOINT, {
 				headers: {
 					Authorization: `Bearer ${token.value}`
@@ -22,30 +25,33 @@ $effect.root(() => {
 						isLoggedInState = true;
 						const data = await res.json();
 						if (data) {
-							if (data.is_superuser) {
-								isAdminUser = true;
-							}
-							if (data.first_name) {
-								firstName = data.first_name;
-							}
-							if (data.last_name) {
-								lastName = data.last_name;
-							}
-							if (data.email) {
-								email = data.email;
-							}
-							if (data.username) {
-								username = data.username;
-							}
+							isAdminUser = Boolean(data.is_superuser);
+							firstName = data.first_name ?? null;
+							lastName = data.last_name ?? null;
+							email = data.email ?? null;
+							username = data.username ?? null;
 						}
+						fetchState = 'fetched';
 					} else {
 						isLoggedInState = false;
+						isAdminUser = null;
+						firstName = lastName = email = username = null;
 						token.set(null);
+						fetchState = 'not_fetched';
 					}
 				})
 				.catch(() => {
 					isLoggedInState = false;
+					isAdminUser = null;
+					firstName = lastName = email = username = null;
+					fetchState = 'not_fetched';
 				});
+		} else {
+			// Reset state when token is cleared
+			isLoggedInState = false;
+			isAdminUser = null;
+			firstName = lastName = email = username = null;
+			fetchState = 'not_fetched';
 		}
 	});
 });
@@ -80,5 +86,10 @@ export const user_email = {
 export const user_username = {
 	get value() {
 		return username;
+	}
+};
+export const is_fetched = {
+	get value() {
+		return fetchState === 'fetched';
 	}
 };

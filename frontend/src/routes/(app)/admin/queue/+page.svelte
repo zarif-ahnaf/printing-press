@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy } from 'svelte';
+	import { onDestroy, onMount } from 'svelte';
 
 	// UI Components (unchanged)
 	import {
@@ -29,8 +29,7 @@
 	import { token } from '$lib/stores/token.svelte';
 	import { PdfCache as PdfMergeCache } from './pdf_cache';
 
-	// ✅ IMPORT WASM FUNCTION
-	import { merge_pdfs_wasm } from '$lib/wasm/pdf_merge'; // Adjust path as needed
+	import init, { merge_pdfs_wasm } from '$lib/wasm/pdf_merge';
 
 	interface QueueItem {
 		id: number;
@@ -68,6 +67,9 @@
 			{} as Record<string, QueueItem[]>
 		);
 	}
+	onMount(async () => {
+		await init();
+	});
 
 	$effect(() => {
 		async function fetchQueue() {
@@ -103,7 +105,6 @@
 		selectedItems = { ...selectedItems, [user]: newSet };
 	}
 
-	// ✅ FETCH BLOB AS UINT8ARRAY
 	async function fetchPdfAsUint8Array(url: string): Promise<Uint8Array> {
 		const res = await fetch(url, {
 			headers: { Authorization: `Bearer ${token.value}` }
@@ -122,7 +123,6 @@
 
 		mergingFiles = new Set([...mergingFiles, ...files]);
 
-		// Check cache first
 		if (mergeCache.has(cacheKey)) {
 			const cached = mergeCache.get(cacheKey)!;
 			const mergedItem: QueueItem = {
@@ -150,7 +150,6 @@
 			return;
 		}
 
-		// ✅ USE WASM INSTEAD OF HTTP ENDPOINT
 		merging.add(user);
 		try {
 			// Fetch PDFs as Uint8Arrays
@@ -248,18 +247,39 @@
 	async function printPdf(url: string) {
 		printing.add(url);
 		try {
-			const res = await fetch(url, { headers: { Authorization: `Bearer ${token.value}` } });
-			if (!res.ok) throw new Error('Failed to fetch PDF');
-			const blob = await res.blob();
-			const pdfUrl = URL.createObjectURL(blob);
+			let pdfUrl: string;
+
+			if (url.startsWith('blob:')) {
+				// Already a local blob URL — use it directly
+				pdfUrl = url;
+			} else {
+				// Remote URL — fetch with auth
+				const res = await fetch(url, { headers: { Authorization: `Bearer ${token.value}` } });
+				if (!res.ok) throw new Error('Failed to fetch PDF');
+				const blob = await res.blob();
+				pdfUrl = URL.createObjectURL(blob);
+			}
+
 			const printWindow = window.open(pdfUrl, '_blank');
 			if (!printWindow) {
 				error = 'Popup blocked. Please allow popups to print.';
 				return;
 			}
+
+			// Clean up blob URL after printing
 			printWindow.addEventListener('load', () => {
 				printWindow.print();
-				URL.revokeObjectURL(pdfUrl);
+				// Only revoke if we created the blob (i.e., not original blob from merge)
+				if (!url.startsWith('blob:')) {
+					URL.revokeObjectURL(pdfUrl);
+				}
+			});
+
+			// Optional: revoke on window close if print wasn't triggered
+			printWindow.addEventListener('beforeunload', () => {
+				if (!url.startsWith('blob:')) {
+					URL.revokeObjectURL(pdfUrl);
+				}
 			});
 		} catch (err) {
 			error = err instanceof Error ? `Print error: ${err.message}` : 'Print failed';
@@ -272,10 +292,14 @@
 		previewLoading = true;
 		previewUrl = null;
 		try {
-			const res = await fetch(url, { headers: { Authorization: `Bearer ${token.value}` } });
-			if (!res.ok) throw new Error('PDF not accessible');
-			const blob = await res.blob();
-			previewUrl = URL.createObjectURL(blob);
+			if (url.startsWith('blob:')) {
+				previewUrl = url;
+			} else {
+				const res = await fetch(url, { headers: { Authorization: `Bearer ${token.value}` } });
+				if (!res.ok) throw new Error('PDF not accessible');
+				const blob = await res.blob();
+				previewUrl = URL.createObjectURL(blob);
+			}
 		} catch (err) {
 			error = err instanceof Error ? `Preview error: ${err.message}` : 'Failed to load PDF preview';
 			previewUrl = null;
@@ -283,7 +307,6 @@
 			previewLoading = false;
 		}
 	}
-
 	function closePreview() {
 		if (previewUrl) {
 			URL.revokeObjectURL(previewUrl);

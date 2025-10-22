@@ -130,7 +130,6 @@ def queue_files(
 )
 def list_queue(
     request: HttpRequest,
-    include_processed: bool = False,
 ):
     """
     Fetch all queued files for the current user.
@@ -138,9 +137,6 @@ def list_queue(
     """
     current_user = request.auth
     queryset = Queue.objects.filter(user=current_user)
-
-    if not include_processed:
-        queryset = queryset.filter(processed=False)
 
     items = [
         {
