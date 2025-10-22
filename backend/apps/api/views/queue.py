@@ -1,4 +1,4 @@
-from ninja import Router, File, Form, Schema
+from ninja import Router, File, Form
 from ninja.files import UploadedFile
 from ninja.errors import HttpError
 from ..auth import AuthBearer
@@ -15,22 +15,20 @@ from ..schemas.queue import (
     QueueUploadResponse,
     QueueListResponse,
     ProcessStatusResponse,
+    QueueFileUpload,
 )
+from ..decorators import login_required
 
 router = Router(tags=["Queue"])
 
 COST_PER_PAGE = Decimal("1.0")
 
 
-class QueueFileUploadSchema(Schema):
-    user_id: int | None = None
-
-
 @router.post("", auth=AuthBearer(), response=QueueUploadResponse)
 def queue_files(
     request: HttpRequest,
     files: File[list[UploadedFile]],
-    payload: Form[QueueFileUploadSchema],
+    payload: Form[QueueFileUpload],
 ):
     current_user = request.auth
     # Determine target user
@@ -132,6 +130,7 @@ def queue_files(
 @router.get(
     "", auth=AuthBearer(), response=QueueListResponse, summary="List queued files"
 )
+@login_required
 def list_queue(
     request: HttpRequest,
 ):

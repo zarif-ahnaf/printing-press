@@ -3,6 +3,7 @@ from django.conf import settings
 from ninja import NinjaAPI
 from pathlib import Path
 import importlib
+import sys
 from ninja.router import Router
 import logging
 
@@ -53,6 +54,9 @@ def register_routers():
             full_module_name = f"{APP_BASE}.views"
             url_prefix = ""
 
+        if full_module_name in sys.modules:
+            del sys.modules[full_module_name]
+
         try:
             module = importlib.import_module(full_module_name)
 
@@ -89,7 +93,6 @@ def register_routers():
                 f"from file '{py_file}'. Skipping this module."
             )
             if settings.DEBUG:
-                # Re-raise the original exception to break on error during development
                 raise
 
 

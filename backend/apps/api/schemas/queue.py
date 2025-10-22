@@ -2,6 +2,10 @@ from datetime import datetime
 from ninja import Schema
 
 
+class QueueFileUpload(Schema):
+    user_id: int | None = None
+
+
 class QueueFileResponse(Schema):
     id: int
     file: str
