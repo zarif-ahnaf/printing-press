@@ -28,6 +28,7 @@
 	import { QUEUE_URL } from '$lib/constants/backend';
 	import { token } from '$lib/stores/token.svelte';
 	import init, { merge_pdfs_wasm } from '$lib/wasm/pdf_merge';
+	import { SvelteSet } from 'svelte/reactivity';
 
 	interface QueueItem {
 		id: number;
@@ -44,12 +45,15 @@
 	let groupedQueue = $state<Record<string, QueueItem[]>>({});
 	let loading = $state(false);
 	let error = $state<string | null>(null);
-	let merging = $state(new Set<string>());
-	let mergingFiles = $state(new Set<string>());
-	let printing = $state(new Set<string>());
+
+	let merging = $state<Record<string, boolean>>({});
+	let mergingFiles = $state<Record<string, boolean>>({});
+	let printing = $state<Record<string, boolean>>({});
 	let previewUrl = $state<string | null>(null);
 	let previewLoading = $state(false);
-	let selectedItems = $state<Record<string, Set<string>>>({});
+	let selectedItems = $state<Record<string, Record<string, boolean>>>({});
+
+	const activeMergedBlobs = new SvelteSet<string>();
 
 	function groupByUser(items: QueueItem[]): Record<string, QueueItem[]> {
 		return items.reduce(
@@ -80,7 +84,7 @@
 				groupedQueue = groupByUser(queue);
 				selectedItems = {};
 				for (const user of Object.keys(groupedQueue)) {
-					selectedItems[user] = new Set();
+					selectedItems[user] = {};
 				}
 			} catch (err) {
 				error = err instanceof Error ? err.message : 'An unknown error occurred';
@@ -92,12 +96,14 @@
 	});
 
 	function toggleSelect(user: string, file: string, checked: boolean) {
-		if (mergingFiles.has(file)) return;
-		const currentSet = selectedItems[user] || new Set<string>();
-		const newSet = new Set(currentSet);
-		if (checked) newSet.add(file);
-		else newSet.delete(file);
-		selectedItems = { ...selectedItems, [user]: newSet };
+		if (mergingFiles[file]) return;
+		selectedItems = {
+			...selectedItems,
+			[user]: {
+				...selectedItems[user],
+				[file]: checked
+			}
+		};
 	}
 
 	async function fetchPdfAsUint8Array(url: string): Promise<Uint8Array> {
@@ -110,14 +116,29 @@
 	}
 
 	async function mergePdfs(user: string) {
-		const files = Array.from(selectedItems[user] || []);
+		const files = Object.entries(selectedItems[user] || {})
+			.filter(([, checked]) => checked)
+			.map(([file]) => file);
+
 		if (files.length === 0) return;
 
 		const userItems = groupedQueue[user] || [];
-		mergingFiles = new Set([...mergingFiles, ...files]);
-		merging.add(user);
+
+		// Mark files as merging
+		merging = { ...merging, [user]: true };
+		mergingFiles = { ...mergingFiles };
+		for (const f of files) {
+			mergingFiles[f] = true;
+		}
 
 		try {
+			const fileToIndex = new Map<string, number>();
+			for (const [idx, item] of userItems.entries()) {
+				if (files.includes(item.file)) {
+					fileToIndex.set(item.file, idx);
+				}
+			}
+
 			const uint8Arrays: Uint8Array[] = [];
 			for (const fileUrl of files) {
 				const uint8 = await fetchPdfAsUint8Array(fileUrl);
@@ -132,6 +153,11 @@
 			const mergedBytes: Uint8Array = merge_pdfs_wasm(pdfArray);
 			const mergedBlob = new Blob([mergedBytes.slice()], { type: 'application/pdf' });
 			const url = URL.createObjectURL(mergedBlob);
+			activeMergedBlobs.add(url);
+
+			const selectedIndices = files.map((f) => fileToIndex.get(f)!);
+			const maxIndex = Math.max(...selectedIndices);
+			const insertIndex = maxIndex + 1;
 
 			const mergedItem: QueueItem = {
 				id: -1,
@@ -147,19 +173,19 @@
 				files.includes(item.file) ? { ...item, hidden: true } : item
 			);
 
-			const firstVisibleIndex = updatedItems.findIndex((item) => !item.hidden);
-			const insertIndex = firstVisibleIndex === -1 ? updatedItems.length : firstVisibleIndex;
-
 			const finalItems = [...updatedItems];
 			finalItems.splice(insertIndex, 0, mergedItem);
 
 			groupedQueue = { ...groupedQueue, [user]: finalItems };
-			selectedItems[user] = new Set();
+			selectedItems = { ...selectedItems, [user]: {} };
 		} catch (err) {
 			error = err instanceof Error ? `Merge error: ${err.message}` : 'Merge failed';
 		} finally {
-			merging.delete(user);
-			mergingFiles = new Set([...mergingFiles].filter((f) => !files.includes(f)));
+			merging = { ...merging, [user]: false };
+			mergingFiles = { ...mergingFiles };
+			for (const f of files) {
+				delete mergingFiles[f];
+			}
 		}
 	}
 
@@ -174,17 +200,16 @@
 			return;
 		}
 
-		// Revoke the blob URL immediately
-		if (fileUrl.startsWith('blob:')) {
+		// Revoke blob only if we own it
+		if (fileUrl.startsWith('blob:') && activeMergedBlobs.has(fileUrl)) {
 			URL.revokeObjectURL(fileUrl);
+			activeMergedBlobs.delete(fileUrl);
 		}
 
-		// Remove merged item
 		const withoutMerged = [...userItems];
 		withoutMerged.splice(mergedIndex, 1);
 
-		// Restore original items
-		const originals = mergedItem.mergedFrom.map((file) => {
+		const restoredOriginals = mergedItem.mergedFrom.map((file) => {
 			const original = queue.find((q) => q.file === file && q.user === user);
 			return original
 				? { ...original, hidden: false }
@@ -199,16 +224,16 @@
 		});
 
 		const restored = [...withoutMerged];
-		restored.splice(mergedIndex, 0, ...originals);
+		restored.splice(mergedIndex, 0, ...restoredOriginals);
 		groupedQueue = { ...groupedQueue, [user]: restored };
-		selectedItems[user] = new Set();
+		selectedItems = { ...selectedItems, [user]: {} };
 	}
 
-	// ———————— Print & Preview ————————
 	async function printPdf(url: string) {
-		printing.add(url);
+		printing = { ...printing, [url]: true };
 		try {
 			let pdfUrl: string;
+			let shouldRevoke = false;
 
 			if (url.startsWith('blob:')) {
 				pdfUrl = url;
@@ -217,28 +242,33 @@
 				if (!res.ok) throw new Error('Failed to fetch PDF');
 				const blob = await res.blob();
 				pdfUrl = URL.createObjectURL(blob);
+				shouldRevoke = true;
 			}
 
 			const printWindow = window.open(pdfUrl, '_blank');
 			if (!printWindow) {
 				error = 'Popup blocked. Please allow popups to print.';
+				if (shouldRevoke) URL.revokeObjectURL(pdfUrl);
 				return;
 			}
 
-			const shouldRevoke = !url.startsWith('blob:');
-
-			printWindow.addEventListener('load', () => {
-				printWindow.print();
+			const cleanup = () => {
 				if (shouldRevoke) URL.revokeObjectURL(pdfUrl);
-			});
+			};
 
-			printWindow.addEventListener('beforeunload', () => {
-				if (shouldRevoke) URL.revokeObjectURL(pdfUrl);
-			});
+			printWindow.addEventListener('load', () => printWindow.print());
+			printWindow.addEventListener('beforeunload', cleanup);
+
+			const interval = setInterval(() => {
+				if (printWindow.closed) {
+					cleanup();
+					clearInterval(interval);
+				}
+			}, 500);
 		} catch (err) {
 			error = err instanceof Error ? `Print error: ${err.message}` : 'Print failed';
 		} finally {
-			printing.delete(url);
+			printing = { ...printing, [url]: false };
 		}
 	}
 
@@ -263,35 +293,23 @@
 	}
 
 	function closePreview() {
-		if (previewUrl) {
-			if (!previewUrl.startsWith('blob:') || !isMergedBlobInUse(previewUrl)) {
-				URL.revokeObjectURL(previewUrl);
-			}
-			previewUrl = null;
+		if (previewUrl && !previewUrl.startsWith('http')) {
+			URL.revokeObjectURL(previewUrl);
 		}
-	}
-
-	function isMergedBlobInUse(blobUrl: string): boolean {
-		// Simple check: if any merged item in groupedQueue uses this URL
-		for (const items of Object.values(groupedQueue)) {
-			if (items.some((item) => item.isMerged && item.file === blobUrl)) {
-				return true;
-			}
-		}
-		return false;
+		previewUrl = null;
 	}
 
 	onDestroy(() => {
-		if (previewUrl && !previewUrl.startsWith('blob:')) {
-			URL.revokeObjectURL(previewUrl);
-		}
-		// Revoke all active merged blobs
-		for (const items of Object.values(groupedQueue)) {
-			for (const item of items) {
-				if (item.isMerged && item.file.startsWith('blob:')) {
-					URL.revokeObjectURL(item.file);
-				}
+		// Revoke all merged blobs we created
+		for (const url of activeMergedBlobs) {
+			if (url.startsWith('blob:')) {
+				URL.revokeObjectURL(url);
 			}
+		}
+		activeMergedBlobs.clear();
+
+		if (previewUrl && !previewUrl.startsWith('http')) {
+			URL.revokeObjectURL(previewUrl);
 		}
 	});
 </script>
@@ -364,10 +382,11 @@
 						<Button
 							variant="default"
 							size="sm"
-							disabled={merging.has(user) || (selectedItems[user]?.size || 0) === 0}
+							disabled={merging[user] ||
+								Object.values(selectedItems[user] || {}).filter(Boolean).length === 0}
 							onclick={() => mergePdfs(user)}
 						>
-							{#if merging.has(user)}
+							{#if merging[user]}
 								<LoaderCircle class="mr-2 h-4 w-4 animate-spin" />
 								Merging...
 							{:else}
@@ -391,16 +410,16 @@
 							{#each items as item}
 								{#if !item.hidden}
 									<TableRow
-										class="transition-opacity duration-200 ease-in-out {mergingFiles.has(item.file)
+										class="transition-opacity duration-200 ease-in-out {mergingFiles[item.file]
 											? 'pointer-events-none opacity-50'
 											: ''}"
 									>
 										<TableCell>
 											{#if !item.isMerged}
 												<Checkbox
-													checked={selectedItems[user]?.has(item.file) || false}
+													checked={!!selectedItems[user]?.[item.file]}
 													onCheckedChange={(checked) => toggleSelect(user, item.file, checked)}
-													disabled={mergingFiles.has(item.file)}
+													disabled={mergingFiles[item.file]}
 												/>
 											{/if}
 										</TableCell>
@@ -425,17 +444,17 @@
 													variant="outline"
 													size="sm"
 													onclick={() => openPreview(item.file)}
-													disabled={mergingFiles.has(item.file)}
+													disabled={mergingFiles[item.file]}
 												>
 													<Eye class="h-4 w-4" />
 												</Button>
 												<Button
 													variant="outline"
 													size="sm"
-													disabled={printing.has(item.file) || mergingFiles.has(item.file)}
+													disabled={printing[item.file] || mergingFiles[item.file]}
 													onclick={() => printPdf(item.file)}
 												>
-													{#if printing.has(item.file)}
+													{#if printing[item.file]}
 														<LoaderCircle class="h-4 w-4 animate-spin" />
 													{:else}
 														<Printer class="h-4 w-4" />
