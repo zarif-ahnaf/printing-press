@@ -71,7 +71,12 @@
 		first_name: string;
 		last_name: string;
 	}
-
+	interface QueueUploadResponse {
+		message: string;
+		total_pages: number;
+		queue_ids: number[];
+		total_charged_bdt: string;
+	}
 	interface PDFFile {
 		id: string;
 		file: File;
@@ -351,8 +356,8 @@
 			formData.append('files', fileToSubmit);
 		});
 
-		if (is_admin_user.value && selectedUserId !== null) {
-			formData.append('user_id', selectedUserId.toString());
+		if (is_admin_user.value && selectedUserId !== null && Number.isInteger(selectedUserId)) {
+			formData.append('user_id', String(selectedUserId));
 		}
 
 		const headers: Record<string, string> = {};
@@ -363,23 +368,22 @@
 		try {
 			const res = await fetch(QUEUE_URL, {
 				method: 'POST',
-				headers,
+				headers, // Note: DO NOT set Content-Type — browser sets it with boundary
 				body: formData
 			});
 
 			if (res.ok) {
+				const data: QueueUploadResponse = await res.json(); // ✅ Parse JSON response
 				filesToSubmit.forEach((pdfFile) => {
 					pdfFile.enqueueStatus = 'success';
 				});
-
-				toast.success(`${filesToSubmit.length} file(s) enqueued successfully`, {
-					duration: 4000
-				});
-
+				toast.success(data.message, { duration: 4000 });
 				goto('/transactions');
 			} else {
-				const errorText = await res.text();
-				throw new Error(errorText || `Enqueue failed with status ${res.status}`);
+				const errorData = await res.json().catch(() => ({}));
+				const errorMsg =
+					errorData?.detail || errorData?.message || `Enqueue failed (${res.status})`;
+				throw new Error(errorMsg);
 			}
 		} catch (error: any) {
 			toast.error('Enqueue failed', {
@@ -390,7 +394,6 @@
 			isSubmitting = false;
 		}
 	}
-
 	async function optimizeFile(pdfFile: PDFFile) {
 		try {
 			pdfFile.isOptimizing = true;

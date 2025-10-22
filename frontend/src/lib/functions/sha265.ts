@@ -1,7 +1,7 @@
-import { sha256 } from 'hash-wasm';
+import { sha256 as basesha256 } from 'hash-wasm';
 
-export async function sha256Email(message: string): Promise<string> {
+export async function sha256(message: string): Promise<string> {
 	const normalized = message.trim().toLowerCase();
 
-	return await sha256(normalized);
+	return await basesha256(normalized);
 }

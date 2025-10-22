@@ -1,4 +1,4 @@
-from ninja import Router, File, Form
+from ninja import Router, File, Form, Schema
 from ninja.files import UploadedFile
 from ninja.errors import HttpError
 from ..auth import AuthBearer
@@ -22,20 +22,24 @@ router = Router(tags=["Queue"])
 COST_PER_PAGE = Decimal("1.0")
 
 
+class QueueFileUploadSchema(Schema):
+    user_id: int | None = None
+
+
 @router.post("", auth=AuthBearer(), response=QueueUploadResponse)
 def queue_files(
     request: HttpRequest,
     files: File[list[UploadedFile]],
-    user_id: Form[int] | None = None,
+    payload: Form[QueueFileUploadSchema],
 ):
     current_user = request.auth
     # Determine target user
-    if user_id is not None:
+    if payload.user_id is not None:
         # Admin trying to specify a user
         if not current_user.is_staff:
             raise HttpError(403, "Only admins can specify a user_id.")
         try:
-            target_user = User.objects.get(id=user_id)
+            target_user = User.objects.get(id=payload.user_id)
         except User.DoesNotExist:
             raise HttpError(404, "User not found.")
     else:
