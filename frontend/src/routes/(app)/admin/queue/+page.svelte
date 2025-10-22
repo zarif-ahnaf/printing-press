@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { onDestroy, onMount } from 'svelte';
 
-	// UI Components (unchanged)
+	// UI Components
 	import {
 		Table,
 		TableBody,
@@ -23,12 +23,10 @@
 	} from '$lib/components/ui/dialog';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 
-	// Icons (unchanged)
+	// Icons
 	import { FileText, Printer, Merge, LoaderCircle, Eye, X } from 'lucide-svelte';
 	import { QUEUE_URL } from '$lib/constants/backend';
 	import { token } from '$lib/stores/token.svelte';
-	import { PdfCache as PdfMergeCache } from './pdf_cache';
-
 	import init, { merge_pdfs_wasm } from '$lib/wasm/pdf_merge';
 
 	interface QueueItem {
@@ -40,10 +38,8 @@
 		isMerged?: boolean;
 		mergedFrom?: string[];
 		hidden?: boolean;
-		cacheKey?: string;
 	}
 
-	// ———————— State ————————
 	let queue = $state<QueueItem[]>([]);
 	let groupedQueue = $state<Record<string, QueueItem[]>>({});
 	let loading = $state(false);
@@ -55,8 +51,6 @@
 	let previewLoading = $state(false);
 	let selectedItems = $state<Record<string, Set<string>>>({});
 
-	const mergeCache = new PdfMergeCache();
-
 	function groupByUser(items: QueueItem[]): Record<string, QueueItem[]> {
 		return items.reduce(
 			(acc, item) => {
@@ -67,6 +61,7 @@
 			{} as Record<string, QueueItem[]>
 		);
 	}
+
 	onMount(async () => {
 		await init();
 	});
@@ -118,61 +113,25 @@
 		const files = Array.from(selectedItems[user] || []);
 		if (files.length === 0) return;
 
-		const cacheKey = mergeCache.generateKey(files);
 		const userItems = groupedQueue[user] || [];
-
 		mergingFiles = new Set([...mergingFiles, ...files]);
-
-		if (mergeCache.has(cacheKey)) {
-			const cached = mergeCache.get(cacheKey)!;
-			const mergedItem: QueueItem = {
-				id: -1,
-				file: cached.url,
-				processed: true,
-				created_at: new Date().toISOString(),
-				user,
-				isMerged: true,
-				mergedFrom: files,
-				cacheKey
-			};
-
-			const updatedItems = userItems.map((item) =>
-				files.includes(item.file) ? { ...item, hidden: true } : item
-			);
-
-			const insertIndex = updatedItems.findIndex((item) => !item.hidden) || 0;
-			const finalItems = [...updatedItems];
-			finalItems.splice(insertIndex, 0, mergedItem);
-
-			groupedQueue = { ...groupedQueue, [user]: finalItems };
-			selectedItems[user] = new Set();
-			mergingFiles = new Set([...mergingFiles].filter((f) => !files.includes(f)));
-			return;
-		}
-
 		merging.add(user);
+
 		try {
-			// Fetch PDFs as Uint8Arrays
 			const uint8Arrays: Uint8Array[] = [];
 			for (const fileUrl of files) {
 				const uint8 = await fetchPdfAsUint8Array(fileUrl);
 				uint8Arrays.push(uint8);
 			}
 
-			// Create JS Array of Uint8Array for WASM
 			const pdfArray = new Array(uint8Arrays.length);
 			for (let i = 0; i < uint8Arrays.length; i++) {
 				pdfArray[i] = uint8Arrays[i];
 			}
 
-			// Call WASM function
 			const mergedBytes: Uint8Array = merge_pdfs_wasm(pdfArray);
-
-			// Create blob and URL
 			const mergedBlob = new Blob([mergedBytes.slice()], { type: 'application/pdf' });
 			const url = URL.createObjectURL(mergedBlob);
-			const filename = `${user}_merged.pdf`;
-			mergeCache.set(cacheKey, url, filename);
 
 			const mergedItem: QueueItem = {
 				id: -1,
@@ -181,8 +140,7 @@
 				created_at: new Date().toISOString(),
 				user,
 				isMerged: true,
-				mergedFrom: files,
-				cacheKey
+				mergedFrom: files
 			};
 
 			const updatedItems = userItems.map((item) =>
@@ -216,13 +174,16 @@
 			return;
 		}
 
+		// Revoke the blob URL immediately
 		if (fileUrl.startsWith('blob:')) {
 			URL.revokeObjectURL(fileUrl);
 		}
 
+		// Remove merged item
 		const withoutMerged = [...userItems];
 		withoutMerged.splice(mergedIndex, 1);
 
+		// Restore original items
 		const originals = mergedItem.mergedFrom.map((file) => {
 			const original = queue.find((q) => q.file === file && q.user === user);
 			return original
@@ -243,17 +204,15 @@
 		selectedItems[user] = new Set();
 	}
 
-	// ———————— Print & Preview ———————— (unchanged)
+	// ———————— Print & Preview ————————
 	async function printPdf(url: string) {
 		printing.add(url);
 		try {
 			let pdfUrl: string;
 
 			if (url.startsWith('blob:')) {
-				// Already a local blob URL — use it directly
 				pdfUrl = url;
 			} else {
-				// Remote URL — fetch with auth
 				const res = await fetch(url, { headers: { Authorization: `Bearer ${token.value}` } });
 				if (!res.ok) throw new Error('Failed to fetch PDF');
 				const blob = await res.blob();
@@ -266,20 +225,15 @@
 				return;
 			}
 
-			// Clean up blob URL after printing
+			const shouldRevoke = !url.startsWith('blob:');
+
 			printWindow.addEventListener('load', () => {
 				printWindow.print();
-				// Only revoke if we created the blob (i.e., not original blob from merge)
-				if (!url.startsWith('blob:')) {
-					URL.revokeObjectURL(pdfUrl);
-				}
+				if (shouldRevoke) URL.revokeObjectURL(pdfUrl);
 			});
 
-			// Optional: revoke on window close if print wasn't triggered
 			printWindow.addEventListener('beforeunload', () => {
-				if (!url.startsWith('blob:')) {
-					URL.revokeObjectURL(pdfUrl);
-				}
+				if (shouldRevoke) URL.revokeObjectURL(pdfUrl);
 			});
 		} catch (err) {
 			error = err instanceof Error ? `Print error: ${err.message}` : 'Print failed';
@@ -307,16 +261,38 @@
 			previewLoading = false;
 		}
 	}
+
 	function closePreview() {
 		if (previewUrl) {
-			URL.revokeObjectURL(previewUrl);
+			if (!previewUrl.startsWith('blob:') || !isMergedBlobInUse(previewUrl)) {
+				URL.revokeObjectURL(previewUrl);
+			}
 			previewUrl = null;
 		}
 	}
 
+	function isMergedBlobInUse(blobUrl: string): boolean {
+		// Simple check: if any merged item in groupedQueue uses this URL
+		for (const items of Object.values(groupedQueue)) {
+			if (items.some((item) => item.isMerged && item.file === blobUrl)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	onDestroy(() => {
-		if (previewUrl) URL.revokeObjectURL(previewUrl);
-		mergeCache.revokeAll();
+		if (previewUrl && !previewUrl.startsWith('blob:')) {
+			URL.revokeObjectURL(previewUrl);
+		}
+		// Revoke all active merged blobs
+		for (const items of Object.values(groupedQueue)) {
+			for (const item of items) {
+				if (item.isMerged && item.file.startsWith('blob:')) {
+					URL.revokeObjectURL(item.file);
+				}
+			}
+		}
 	});
 </script>
 

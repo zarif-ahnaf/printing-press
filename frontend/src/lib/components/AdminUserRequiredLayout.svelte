@@ -12,16 +12,12 @@
 		<p class="text-lg text-muted-foreground">Loading...</p>
 	</div>
 {:else if !is_admin_user.value}
-	<div class="height flex h-screen flex-col items-center justify-center px-4 text-center">
+	<div
+		class="flex h-[calc(100vh-var(--spacing)*16)] flex-col items-center justify-center px-4 text-center"
+	>
 		<h1 class="mb-2 text-3xl font-bold tracking-tight">Access Denied</h1>
 		<p class="text-muted-foreground">You don’t have permission to view this page.</p>
 	</div>
 {:else}
 	{@render children?.()}
 {/if}
-
-<style>
-	.height {
-		height: calc(100vh - var(--spacing) * 16);
-	}
-</style>

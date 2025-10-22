@@ -553,7 +553,7 @@
 	</div>
 {/if}
 
-<div class="min-h-screen bg-background p-4 md:p-8">
+<div class="bg-background p-4 md:p-8">
 	<!-- Header -->
 	<header class="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between">
 		{#if is_admin_user.value}
