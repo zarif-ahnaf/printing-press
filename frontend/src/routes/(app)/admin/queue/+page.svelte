@@ -23,8 +23,7 @@
 	} from '$lib/components/ui/dialog';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 
-	// Icons
-	import { FileText, Printer, Merge, LoaderCircle, Eye, X } from 'lucide-svelte';
+	import { FileText, Printer, Merge, LoaderCircle, Eye, X, ExternalLink } from 'lucide-svelte';
 	import { QUEUE_URL } from '$lib/constants/backend';
 	import { token } from '$lib/stores/token.svelte';
 	import init, { merge_pdfs_wasm } from '$lib/wasm/pdf_merge';
@@ -55,16 +54,13 @@
 
 	// 🔍 Estimate available memory (in bytes)
 	function getEstimatedMemory(): number {
-		// Chromium: use performance.memory
 		if ('memory' in performance) {
 			const mem = (performance as any).memory;
 			if (mem && typeof mem.jsHeapSizeLimit === 'number') {
-				// jsHeapSizeLimit is close to total JS heap, but we want total system estimate
-				return Math.min(mem.jsHeapSizeLimit * 2, 4 * 1024 ** 3); // cap at 4GB for safety
+				return Math.min(mem.jsHeapSizeLimit * 2, 4 * 1024 ** 3);
 			}
 		}
 
-		// navigator.deviceMemory (in GB, rounded)
 		if ('deviceMemory' in navigator) {
 			const deviceMemGB = (navigator as any).deviceMemory;
 			if (typeof deviceMemGB === 'number') {
@@ -72,25 +68,22 @@
 			}
 		}
 
-		// Conservative fallback: assume 4GB on low-end, 8GB on others
 		if (
 			'navigator' in window &&
 			'hardwareConcurrency' in navigator &&
 			(navigator as any).hardwareConcurrency <= 2
 		) {
-			return 4 * 1024 ** 3; // 4GB
+			return 4 * 1024 ** 3;
 		}
-		return 8 * 1024 ** 3; // 8GB
+		return 8 * 1024 ** 3;
 	}
 
-	// 🔍 Fetch size without loading full PDF
 	async function getPDFSize(url: string): Promise<number> {
 		const res = await fetch(url, {
 			method: 'HEAD',
 			headers: { Authorization: `Bearer ${token.value}` }
 		});
 		if (!res.ok) {
-			// Fallback: GET with Range to avoid full download
 			const rangeRes = await fetch(url, {
 				headers: {
 					Authorization: `Bearer ${token.value}`,
@@ -119,12 +112,10 @@
 		return new Uint8Array(arrayBuffer);
 	}
 
-	// 🔁 Sequential merge: merge A+B → AB, then AB+C → ABC, etc.
 	async function mergeSequentially(pdfs: Uint8Array[]): Promise<Uint8Array> {
 		let current = pdfs[0];
 		for (let i = 1; i < pdfs.length; i++) {
 			current = merge_pdfs_wasm([current, pdfs[i]]);
-			// Optional: yield to keep UI responsive
 			await new Promise((resolve) => setTimeout(resolve, 0));
 		}
 		return current;
@@ -195,7 +186,6 @@
 		for (const f of files) mergingFiles[f] = true;
 
 		try {
-			// 🔍 Step 1: Estimate total size
 			let totalSize = 0;
 			try {
 				const sizePromises = files.map((url) => getPDFSize(url));
@@ -203,15 +193,14 @@
 				totalSize = sizes.reduce((sum, s) => sum + s, 0);
 			} catch (sizeErr) {
 				console.warn('Size estimation failed, assuming safe merge:', sizeErr);
-				totalSize = 0; // skip memory check
+				totalSize = 0;
 			}
 
-			// 🔍 Step 2: Decide merge strategy
 			const useSequential =
 				totalSize > 0 &&
 				(() => {
 					const mem = getEstimatedMemory();
-					const threshold = mem * 0.8; // 80%
+					const threshold = mem * 0.8;
 					return totalSize >= threshold;
 				})();
 
@@ -306,7 +295,6 @@
 		selectedItems = { ...selectedItems, [user]: {} };
 	}
 
-	// --- Print & Preview (unchanged from previous memory-safe version) ---
 	async function printPdf(url: string) {
 		printing = { ...printing, [url]: true };
 		let iframe: HTMLIFrameElement | null = null;
@@ -327,7 +315,6 @@
 				shouldRevoke = true;
 			}
 
-			// Create a hidden iframe in the current document (same origin)
 			iframe = document.createElement('iframe');
 			iframe.style.position = 'absolute';
 			iframe.style.left = '-9999px';
@@ -336,7 +323,6 @@
 			iframe.style.height = '0';
 			iframe.setAttribute('aria-hidden', 'true');
 
-			// Wait for iframe to load
 			await new Promise<void>((resolve, reject) => {
 				iframe!.onload = () => resolve();
 				iframe!.onerror = () => reject(new Error('Failed to load PDF in iframe'));
@@ -344,11 +330,8 @@
 				document.body.appendChild(iframe!);
 			});
 
-			// Now safe to call print() — same origin!
 			iframe.contentWindow?.print();
 
-			// Keep iframe in DOM until after print dialog closes (user-dependent)
-			// We'll clean up after a delay + on destroy
 			setTimeout(() => {
 				if (iframe && document.body.contains(iframe)) {
 					document.body.removeChild(iframe);
@@ -357,10 +340,9 @@
 				if (shouldRevoke && blobToRevoke) {
 					URL.revokeObjectURL(blobToRevoke);
 				}
-			}, 10000); // 10s cleanup (user likely done printing by then)
+			}, 10000);
 		} catch (err) {
 			error = err instanceof Error ? `Print error: ${err.message}` : 'Print failed';
-			// Immediate cleanup on error
 			if (iframe && document.body.contains(iframe)) {
 				document.body.removeChild(iframe);
 			}
@@ -371,6 +353,7 @@
 			printing = { ...printing, [url]: false };
 		}
 	}
+
 	async function openPreview(url: string) {
 		previewLoading = true;
 		previewUrl = null;
@@ -398,6 +381,43 @@
 		previewUrl = null;
 	}
 
+	function openInNewTab(url: string) {
+		if (url.startsWith('blob:')) {
+			error = 'Cannot open merged PDFs in a new tab. Use preview instead.';
+			return;
+		}
+
+		let blobUrl: string | null = null;
+		(async () => {
+			try {
+				const res = await fetch(url, { headers: { Authorization: `Bearer ${token.value}` } });
+				if (!res.ok) throw new Error('Failed to fetch PDF for new tab');
+				const blob = await res.blob();
+				blobUrl = URL.createObjectURL(blob);
+				const win = window.open(blobUrl, '_blank');
+				if (!win) {
+					error = 'Popup blocked. Please allow popups to open PDF in new tab.';
+					URL.revokeObjectURL(blobUrl);
+					blobUrl = null;
+				} else {
+					setTimeout(() => {
+						if (blobUrl) {
+							URL.revokeObjectURL(blobUrl);
+							blobUrl = null;
+						}
+					}, 60_000);
+				}
+			} catch (err) {
+				error =
+					err instanceof Error ? `New tab error: ${err.message}` : 'Failed to open in new tab';
+				if (blobUrl) {
+					URL.revokeObjectURL(blobUrl);
+					blobUrl = null;
+				}
+			}
+		})();
+	}
+
 	onDestroy(() => {
 		for (const url of activeMergedBlobs) {
 			if (url.startsWith('blob:')) URL.revokeObjectURL(url);
@@ -409,7 +429,6 @@
 	});
 </script>
 
-<!-- Rest of the template (Dialog + Main Content) remains identical -->
 <Dialog open={!!previewUrl} onOpenChange={(open) => !open && closePreview()}>
 	<DialogContent class="flex max-h-[90vh] max-w-4xl flex-col p-0">
 		<DialogHeader class="border-b px-6 py-4">
@@ -535,14 +554,30 @@
 										</TableCell>
 										<TableCell class="text-right">
 											<div class="flex justify-end gap-2">
-												<Button
-													variant="outline"
-													size="sm"
-													onclick={() => openPreview(item.file)}
-													disabled={mergingFiles[item.file]}
-												>
-													<Eye class="h-4 w-4" />
-												</Button>
+												<!-- Split button: Preview + Open in new tab -->
+												<div class="flex rounded-md border border-input shadow-sm">
+													<Button
+														variant="outline"
+														size="sm"
+														class="rounded-r-none border-r"
+														onclick={() => openPreview(item.file)}
+														disabled={mergingFiles[item.file]}
+														aria-label="Preview PDF"
+													>
+														<Eye class="h-4 w-4" />
+													</Button>
+													<Button
+														variant="outline"
+														size="sm"
+														class="rounded-l-none"
+														onclick={() => openInNewTab(item.file)}
+														disabled={mergingFiles[item.file] || item.file.startsWith('blob:')}
+														aria-label="Open in new tab"
+													>
+														<ExternalLink class="h-4 w-4" />
+													</Button>
+												</div>
+
 												<Button
 													variant="outline"
 													size="sm"
@@ -555,6 +590,7 @@
 														<Printer class="h-4 w-4" />
 													{/if}
 												</Button>
+
 												{#if item.isMerged}
 													<Button
 														variant="destructive"
