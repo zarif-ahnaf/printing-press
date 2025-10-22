@@ -170,7 +170,7 @@
 			const mergedBytes: Uint8Array = merge_pdfs_wasm(pdfArray);
 
 			// Create blob and URL
-			const mergedBlob = new Blob([mergedBytes], { type: 'application/pdf' });
+			const mergedBlob = new Blob([mergedBytes.slice()], { type: 'application/pdf' });
 			const url = URL.createObjectURL(mergedBlob);
 			const filename = `${user}_merged.pdf`;
 			mergeCache.set(cacheKey, url, filename);
