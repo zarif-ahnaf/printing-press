@@ -1,0 +1,15 @@
+{
+  "name": "document-factory",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "document_factory_bg.wasm",
+    "document_factory.js",
+    "document_factory.d.ts"
+  ],
+  "main": "document_factory.js",
+  "types": "document_factory.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
