@@ -215,14 +215,12 @@
 					return totalSize >= threshold;
 				})();
 
-			// Fetch all PDFs
 			const uint8Arrays: Uint8Array[] = [];
 			for (const fileUrl of files) {
 				const uint8 = await fetchPdfAsUint8Array(fileUrl);
 				uint8Arrays.push(uint8);
 			}
 
-			// 🔀 Merge
 			let mergedBytes: Uint8Array;
 			if (useSequential && uint8Arrays.length > 1) {
 				mergedBytes = await mergeSequentially(uint8Arrays);
@@ -234,7 +232,6 @@
 			const url = URL.createObjectURL(mergedBlob);
 			activeMergedBlobs.add(url);
 
-			// Insert in order
 			const fileToIndex = new Map<string, number>();
 			for (const [idx, item] of userItems.entries()) {
 				if (files.includes(item.file)) fileToIndex.set(item.file, idx);
@@ -312,6 +309,9 @@
 	// --- Print & Preview (unchanged from previous memory-safe version) ---
 	async function printPdf(url: string) {
 		printing = { ...printing, [url]: true };
+		let iframe: HTMLIFrameElement | null = null;
+		let blobToRevoke: string | null = null;
+
 		try {
 			let pdfUrl: string;
 			let shouldRevoke = false;
@@ -323,36 +323,54 @@
 				if (!res.ok) throw new Error('Failed to fetch PDF');
 				const blob = await res.blob();
 				pdfUrl = URL.createObjectURL(blob);
+				blobToRevoke = pdfUrl;
 				shouldRevoke = true;
 			}
 
-			const printWindow = window.open(pdfUrl, '_blank');
-			if (!printWindow) {
-				error = 'Popup blocked. Please allow popups to print.';
-				if (shouldRevoke) URL.revokeObjectURL(pdfUrl);
-				return;
-			}
+			// Create a hidden iframe in the current document (same origin)
+			iframe = document.createElement('iframe');
+			iframe.style.position = 'absolute';
+			iframe.style.left = '-9999px';
+			iframe.style.top = '-9999px';
+			iframe.style.width = '0';
+			iframe.style.height = '0';
+			iframe.setAttribute('aria-hidden', 'true');
 
-			const cleanup = () => {
-				if (shouldRevoke) URL.revokeObjectURL(pdfUrl);
-			};
+			// Wait for iframe to load
+			await new Promise<void>((resolve, reject) => {
+				iframe!.onload = () => resolve();
+				iframe!.onerror = () => reject(new Error('Failed to load PDF in iframe'));
+				iframe!.src = pdfUrl;
+				document.body.appendChild(iframe!);
+			});
 
-			printWindow.addEventListener('load', () => printWindow.print());
-			printWindow.addEventListener('beforeunload', cleanup);
+			// Now safe to call print() — same origin!
+			iframe.contentWindow?.print();
 
-			const interval = setInterval(() => {
-				if (printWindow.closed) {
-					cleanup();
-					clearInterval(interval);
+			// Keep iframe in DOM until after print dialog closes (user-dependent)
+			// We'll clean up after a delay + on destroy
+			setTimeout(() => {
+				if (iframe && document.body.contains(iframe)) {
+					document.body.removeChild(iframe);
+					iframe = null;
 				}
-			}, 500);
+				if (shouldRevoke && blobToRevoke) {
+					URL.revokeObjectURL(blobToRevoke);
+				}
+			}, 10000); // 10s cleanup (user likely done printing by then)
 		} catch (err) {
 			error = err instanceof Error ? `Print error: ${err.message}` : 'Print failed';
+			// Immediate cleanup on error
+			if (iframe && document.body.contains(iframe)) {
+				document.body.removeChild(iframe);
+			}
+			if (blobToRevoke) {
+				URL.revokeObjectURL(blobToRevoke);
+			}
 		} finally {
 			printing = { ...printing, [url]: false };
 		}
 	}
-
 	async function openPreview(url: string) {
 		previewLoading = true;
 		previewUrl = null;
