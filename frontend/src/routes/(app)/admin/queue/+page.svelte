@@ -22,11 +22,30 @@
 		DialogClose
 	} from '$lib/components/ui/dialog';
 	import { Checkbox } from '$lib/components/ui/checkbox';
+	import {
+		Tooltip,
+		TooltipContent,
+		TooltipProvider,
+		TooltipTrigger
+	} from '$lib/components/ui/tooltip';
 
-	import { FileText, Printer, Merge, LoaderCircle, Eye, X, ExternalLink } from 'lucide-svelte';
+	// ✅ Lucide Icons (all from lucide-svelte)
+	import {
+		FileText,
+		Printer,
+		Merge,
+		LoaderCircle,
+		Eye,
+		X,
+		ExternalLink,
+		ChevronRight
+	} from 'lucide-svelte';
+
 	import { QUEUE_URL } from '$lib/constants/backend';
 	import { token } from '$lib/stores/token.svelte';
-	import init, { merge_pdfs_wasm } from '$lib/wasm/pdf_merge';
+
+	// ✅ pdf-lib for client-side merging
+	import { PDFDocument } from 'pdf-lib';
 
 	interface QueueItem {
 		id: number;
@@ -53,20 +72,23 @@
 
 	const activeMergedBlobs = new Set<string>();
 
-	// 🔁 Sequential merge using existing Rust function (2 at a time)
-	async function mergeSequentiallyUsingWasm(pdfs: Uint8Array[]): Promise<Uint8Array> {
-		if (pdfs.length === 0) throw new Error('No PDFs to merge');
-		if (pdfs.length === 1) return pdfs[0];
-
-		let current = pdfs[0];
-		for (let i = 1; i < pdfs.length; i++) {
-			const twoPdfArray = new Array(2);
-			twoPdfArray[0] = current;
-			twoPdfArray[1] = pdfs[i];
-			current = merge_pdfs_wasm(twoPdfArray);
-			await new Promise((resolve) => setTimeout(resolve, 0)); // yield
+	// ✅ Merge using pdf-lib
+	async function mergePdfsUsingPdfLib(pdfUrls: string[]): Promise<Uint8Array> {
+		if (pdfUrls.length === 0) throw new Error('No PDFs to merge');
+		if (pdfUrls.length === 1) {
+			const uint8 = await fetchPdfAsUint8Array(pdfUrls[0]);
+			return uint8;
 		}
-		return current;
+
+		const mergedPdf = await PDFDocument.create();
+		for (const url of pdfUrls) {
+			const uint8 = await fetchPdfAsUint8Array(url);
+			const sourcePdf = await PDFDocument.load(uint8, { ignoreEncryption: true });
+			const copiedPages = await mergedPdf.copyPages(sourcePdf, sourcePdf.getPageIndices());
+			copiedPages.forEach((page) => mergedPdf.addPage(page));
+			await new Promise((resolve) => setTimeout(resolve, 0)); // yield to UI
+		}
+		return await mergedPdf.save();
 	}
 
 	async function fetchPdfAsUint8Array(url: string): Promise<Uint8Array> {
@@ -89,8 +111,9 @@
 		);
 	}
 
-	onMount(async () => {
-		await init();
+	// No WASM init needed
+	onMount(() => {
+		// pdf-lib is pure JS
 	});
 
 	$effect(() => {
@@ -143,18 +166,7 @@
 		for (const f of files) mergingFiles[f] = true;
 
 		try {
-			const uint8Arrays: Uint8Array[] = [];
-			for (const fileUrl of files) {
-				const uint8 = await fetchPdfAsUint8Array(fileUrl);
-				uint8Arrays.push(uint8);
-			}
-
-			let mergedBytes: Uint8Array;
-			if (uint8Arrays.length > 1) {
-				mergedBytes = await mergeSequentiallyUsingWasm(uint8Arrays);
-			} else {
-				mergedBytes = uint8Arrays[0];
-			}
+			const mergedBytes = await mergePdfsUsingPdfLib(files);
 
 			const mergedBlob = new Blob([mergedBytes.slice()], { type: 'application/pdf' });
 			const url = URL.createObjectURL(mergedBlob);
@@ -211,18 +223,7 @@
 		for (const f of filesToMerge) mergingFiles[f] = true;
 
 		try {
-			const uint8Arrays: Uint8Array[] = [];
-			for (const fileUrl of filesToMerge) {
-				const uint8 = await fetchPdfAsUint8Array(fileUrl);
-				uint8Arrays.push(uint8);
-			}
-
-			let mergedBytes: Uint8Array;
-			if (uint8Arrays.length > 1) {
-				mergedBytes = await mergeSequentiallyUsingWasm(uint8Arrays);
-			} else {
-				mergedBytes = uint8Arrays[0];
-			}
+			const mergedBytes = await mergePdfsUsingPdfLib(filesToMerge);
 
 			const mergedBlob = new Blob([mergedBytes.slice()], { type: 'application/pdf' });
 			const url = URL.createObjectURL(mergedBlob);
@@ -439,6 +440,7 @@
 	});
 </script>
 
+<!-- Dialog for PDF Preview -->
 <Dialog open={!!previewUrl} onOpenChange={(open) => !open && closePreview()}>
 	<DialogContent class="flex max-h-[90vh] max-w-4xl flex-col p-0">
 		<DialogHeader class="border-b px-6 py-4">
@@ -470,172 +472,240 @@
 	</DialogContent>
 </Dialog>
 
-<div class="container mx-auto space-y-6 py-6">
-	<h1 class="text-3xl font-bold tracking-tight">PDF Processing Queue</h1>
+<!-- Main Content with TooltipProvider -->
+<TooltipProvider>
+	<div class="container mx-auto space-y-6 py-6">
+		<h1 class="text-3xl font-bold tracking-tight">PDF Processing Queue</h1>
 
-	{#if error}
-		<Alert variant="destructive">
-			<AlertDescription>{error}</AlertDescription>
-		</Alert>
-	{/if}
+		{#if error}
+			<Alert variant="destructive">
+				<AlertDescription>{error}</AlertDescription>
+			</Alert>
+		{/if}
 
-	{#if loading}
-		<div class="flex h-32 items-center justify-center">
-			<LoaderCircle class="h-8 w-8 animate-spin text-primary" />
-		</div>
-	{:else if Object.keys(groupedQueue).length === 0}
-		<div class="py-12 text-center">
-			<FileText class="mx-auto h-12 w-12 text-muted-foreground" />
-			<h3 class="mt-2 text-lg font-medium">No items in queue</h3>
-			<p class="mt-1 text-muted-foreground">All PDFs have been processed</p>
-		</div>
-	{:else}
-		<div class="space-y-8">
-			{#each Object.entries(groupedQueue) as [user, items]}
-				<div class="overflow-hidden rounded-lg border">
-					<div class="flex flex-wrap items-center justify-between gap-4 bg-muted/50 px-6 py-4">
-						<div>
-							<h2 class="text-xl font-semibold">{user}</h2>
-							<p class="text-sm text-muted-foreground">
-								{items.filter((i) => !i.hidden).length} pending PDF{items.filter((i) => !i.hidden)
-									.length !== 1
-									? 's'
-									: ''}
-							</p>
+		{#if loading}
+			<div class="flex h-32 items-center justify-center">
+				<LoaderCircle class="h-8 w-8 animate-spin text-primary" />
+			</div>
+		{:else if Object.keys(groupedQueue).length === 0}
+			<div class="py-12 text-center">
+				<FileText class="mx-auto h-12 w-12 text-muted-foreground" />
+				<h3 class="mt-2 text-lg font-medium">No items in queue</h3>
+				<p class="mt-1 text-muted-foreground">All PDFs have been processed</p>
+			</div>
+		{:else}
+			<div class="space-y-8">
+				{#each Object.entries(groupedQueue) as [user, items]}
+					<div class="overflow-hidden rounded-lg border">
+						<div class="flex flex-wrap items-center justify-between gap-4 bg-muted/50 px-6 py-4">
+							<div>
+								<h2 class="text-xl font-semibold">{user}</h2>
+								<p class="text-sm text-muted-foreground">
+									{items.filter((i) => !i.hidden).length} pending PDF{items.filter((i) => !i.hidden)
+										.length !== 1
+										? 's'
+										: ''}
+								</p>
+							</div>
+							<div class="flex flex-wrap gap-2">
+								<Button
+									variant="outline"
+									size="sm"
+									disabled={mergingAllForUser[user] ||
+										items.filter((i) => !i.hidden && !i.isMerged).length === 0}
+									onclick={() => mergeAllForUser(user)}
+								>
+									{#if mergingAllForUser[user]}
+										<LoaderCircle class="mr-2 h-4 w-4 animate-spin" />
+										Merging All...
+									{:else}
+										<Merge class="mr-2 h-4 w-4" />
+										Merge All
+									{/if}
+								</Button>
+
+								<Button
+									variant="default"
+									size="sm"
+									disabled={merging[user] ||
+										Object.values(selectedItems[user] || {}).filter(Boolean).length === 0}
+									onclick={() => mergePdfs(user)}
+								>
+									{#if merging[user]}
+										<LoaderCircle class="mr-2 h-4 w-4 animate-spin" />
+										Merging...
+									{:else}
+										<Merge class="mr-2 h-4 w-4" />
+										Merge Selected
+									{/if}
+								</Button>
+							</div>
 						</div>
-						<div class="flex flex-wrap gap-2">
-							<Button
-								variant="outline"
-								size="sm"
-								disabled={mergingAllForUser[user] ||
-									items.filter((i) => !i.hidden && !i.isMerged).length === 0}
-								onclick={() => mergeAllForUser(user)}
-							>
-								{#if mergingAllForUser[user]}
-									<LoaderCircle class="mr-2 h-4 w-4 animate-spin" />
-									Merging All...
-								{:else}
-									<Merge class="mr-2 h-4 w-4" />
-									Merge All
-								{/if}
-							</Button>
 
-							<Button
-								variant="default"
-								size="sm"
-								disabled={merging[user] ||
-									Object.values(selectedItems[user] || {}).filter(Boolean).length === 0}
-								onclick={() => mergePdfs(user)}
-							>
-								{#if merging[user]}
-									<LoaderCircle class="mr-2 h-4 w-4 animate-spin" />
-									Merging...
-								{:else}
-									<Merge class="mr-2 h-4 w-4" />
-									Merge Selected
-								{/if}
-							</Button>
-						</div>
-					</div>
-
-					<Table>
-						<TableHeader>
-							<TableRow>
-								<TableHead class="w-12"></TableHead>
-								<TableHead>File</TableHead>
-								<TableHead>Status</TableHead>
-								<TableHead>Created</TableHead>
-								<TableHead class="text-right">Actions</TableHead>
-							</TableRow>
-						</TableHeader>
-						<TableBody>
-							{#each items as item}
-								{#if !item.hidden}
-									<TableRow
-										class="transition-opacity duration-200 ease-in-out {mergingFiles[item.file]
-											? 'pointer-events-none opacity-50'
-											: ''}"
-									>
-										<TableCell>
-											{#if !item.isMerged}
-												<Checkbox
-													checked={!!selectedItems[user]?.[item.file]}
-													onCheckedChange={(checked) => toggleSelect(user, item.file, checked)}
-													disabled={mergingFiles[item.file]}
-												/>
-											{/if}
-										</TableCell>
-										<TableCell class="font-medium">
-											{item.file.split('/').pop()}
-										</TableCell>
-										<TableCell>
-											{#if item.isMerged}
-												<Badge variant="default">Merged</Badge>
-											{:else if item.processed}
-												<Badge variant="secondary">Processed</Badge>
-											{:else}
-												<Badge variant="destructive">Pending</Badge>
-											{/if}
-										</TableCell>
-										<TableCell>
-											{new Date(item.created_at).toLocaleString()}
-										</TableCell>
-										<TableCell class="text-right">
-											<div class="flex justify-end gap-2">
-												<div class="flex rounded-md border border-input shadow-sm">
-													<Button
-														variant="outline"
-														size="sm"
-														class="rounded-r-none border-r"
-														onclick={() => openPreview(item.file)}
-														disabled={mergingFiles[item.file]}
-														aria-label="Preview PDF"
+						<Table>
+							<TableHeader>
+								<TableRow>
+									<TableHead class="w-12"></TableHead>
+									<TableHead>File</TableHead>
+									<TableHead>Status</TableHead>
+									<TableHead>Created</TableHead>
+									<TableHead class="text-right">Actions</TableHead>
+								</TableRow>
+							</TableHeader>
+							<TableBody>
+								{#each items as item}
+									{#if !item.hidden}
+										<TableRow
+											class="transition-opacity duration-200 ease-in-out {mergingFiles[item.file]
+												? 'pointer-events-none opacity-50'
+												: ''}"
+										>
+											<TableCell>
+												{#if !item.isMerged}
+													<Tooltip>
+														<TooltipTrigger>
+															<Checkbox
+																checked={!!selectedItems[user]?.[item.file]}
+																onCheckedChange={(checked) =>
+																	toggleSelect(user, item.file, checked)}
+																disabled={mergingFiles[item.file]}
+															/>
+														</TooltipTrigger>
+														<TooltipContent>Select PDF to merge</TooltipContent>
+													</Tooltip>
+												{:else}
+													<div
+														class="flex h-4 w-4 items-center justify-center text-muted-foreground"
 													>
-														<Eye class="h-4 w-4" />
-													</Button>
-													<Button
-														variant="outline"
-														size="sm"
-														class="rounded-l-none"
-														onclick={() => openInNewTab(item.file)}
-														disabled={mergingFiles[item.file] || item.file.startsWith('blob:')}
-														aria-label="Open in new tab"
-													>
-														<ExternalLink class="h-4 w-4" />
-													</Button>
-												</div>
-
-												<Button
-													variant="outline"
-													size="sm"
-													disabled={printing[item.file] || mergingFiles[item.file]}
-													onclick={() => printPdf(item.file)}
-												>
-													{#if printing[item.file]}
-														<LoaderCircle class="h-4 w-4 animate-spin" />
-													{:else}
-														<Printer class="h-4 w-4" />
-													{/if}
-												</Button>
-
-												{#if item.isMerged}
-													<Button
-														variant="destructive"
-														size="icon"
-														onclick={() => unmerge(user, item.file)}
-													>
-														<X class="h-4 w-4" />
-													</Button>
+														<ChevronRight class="h-3 w-3" />
+													</div>
 												{/if}
-											</div>
-										</TableCell>
-									</TableRow>
-								{/if}
-							{/each}
-						</TableBody>
-					</Table>
-				</div>
-			{/each}
-		</div>
-	{/if}
-</div>
+											</TableCell>
+											<TableCell class="font-medium">
+												{#if item.isMerged && item.mergedFrom}
+													<span class="inline-flex items-center gap-1.5">
+														<span>Merged PDF</span>
+														<Badge variant="outline" class="px-1.5 py-0 text-xs">
+															{item.mergedFrom.length} files
+														</Badge>
+													</span>
+												{:else}
+													{item.file.split('/').pop()}
+												{/if}
+											</TableCell>
+											<TableCell>
+												{#if item.isMerged}
+													<Tooltip>
+														<TooltipTrigger>
+															<span><Badge variant="default">Merged</Badge></span>
+														</TooltipTrigger>
+														<TooltipContent
+															>This PDF was created by merging multiple files</TooltipContent
+														>
+													</Tooltip>
+												{:else if item.processed}
+													<Tooltip>
+														<TooltipTrigger>
+															<span><Badge variant="secondary">Processed</Badge></span>
+														</TooltipTrigger>
+														<TooltipContent>PDF has been processed and is ready</TooltipContent>
+													</Tooltip>
+												{:else}
+													<Tooltip>
+														<TooltipTrigger>
+															<span><Badge variant="destructive">Pending</Badge></span>
+														</TooltipTrigger>
+														<TooltipContent>PDF is waiting to be processed</TooltipContent>
+													</Tooltip>
+												{/if}
+											</TableCell>
+											<TableCell>
+												{new Date(item.created_at).toLocaleString()}
+											</TableCell>
+											<TableCell class="text-right">
+												<div class="flex justify-end gap-2">
+													<div class="flex rounded-md border border-input shadow-sm">
+														<Tooltip>
+															<TooltipTrigger>
+																<Button
+																	variant="outline"
+																	size="sm"
+																	class="rounded-r-none border-r"
+																	onclick={() => openPreview(item.file)}
+																	disabled={mergingFiles[item.file]}
+																	aria-label="Preview PDF"
+																>
+																	<Eye class="h-4 w-4" />
+																</Button>
+															</TooltipTrigger>
+															<TooltipContent>Preview PDF</TooltipContent>
+														</Tooltip>
+														<Tooltip>
+															<TooltipTrigger>
+																<Button
+																	variant="outline"
+																	size="sm"
+																	class="rounded-l-none"
+																	onclick={() => openInNewTab(item.file)}
+																	disabled={mergingFiles[item.file] ||
+																		item.file.startsWith('blob:')}
+																	aria-label="Open in new tab"
+																>
+																	<ExternalLink class="h-4 w-4" />
+																</Button>
+															</TooltipTrigger>
+															<TooltipContent>
+																{item.file.startsWith('blob:')
+																	? 'Merged PDFs cannot be opened in a new tab — use Preview instead'
+																	: 'Open in new browser tab'}
+															</TooltipContent>
+														</Tooltip>
+													</div>
+
+													<Tooltip>
+														<TooltipTrigger>
+															<Button
+																variant="outline"
+																size="sm"
+																disabled={printing[item.file] || mergingFiles[item.file]}
+																onclick={() => printPdf(item.file)}
+																aria-label="Print PDF"
+															>
+																{#if printing[item.file]}
+																	<LoaderCircle class="h-4 w-4 animate-spin" />
+																{:else}
+																	<Printer class="h-4 w-4" />
+																{/if}
+															</Button>
+														</TooltipTrigger>
+														<TooltipContent>Print PDF</TooltipContent>
+													</Tooltip>
+
+													{#if item.isMerged}
+														<Tooltip>
+															<TooltipTrigger>
+																<Button
+																	variant="destructive"
+																	size="icon"
+																	onclick={() => unmerge(user, item.file)}
+																	aria-label="Unmerge PDF"
+																>
+																	<X class="h-4 w-4" />
+																</Button>
+															</TooltipTrigger>
+															<TooltipContent>Unmerge: restore original PDFs</TooltipContent>
+														</Tooltip>
+													{/if}
+												</div>
+											</TableCell>
+										</TableRow>
+									{/if}
+								{/each}
+							</TableBody>
+						</Table>
+					</div>
+				{/each}
+			</div>
+		{/if}
+	</div>
+</TooltipProvider>
