@@ -53,54 +53,20 @@
 
 	const activeMergedBlobs = new Set<string>();
 
-	function getEstimatedMemory(): number {
-		if ('memory' in performance) {
-			const mem = (performance as any).memory;
-			if (mem && typeof mem.jsHeapSizeLimit === 'number') {
-				return Math.min(mem.jsHeapSizeLimit * 2, 4 * 1024 ** 3);
-			}
-		}
+	// 🔁 Sequential merge using existing Rust function (2 at a time)
+	async function mergeSequentiallyUsingWasm(pdfs: Uint8Array[]): Promise<Uint8Array> {
+		if (pdfs.length === 0) throw new Error('No PDFs to merge');
+		if (pdfs.length === 1) return pdfs[0];
 
-		if ('deviceMemory' in navigator) {
-			const deviceMemGB = (navigator as any).deviceMemory;
-			if (typeof deviceMemGB === 'number') {
-				return deviceMemGB * 1024 ** 3;
-			}
+		let current = pdfs[0];
+		for (let i = 1; i < pdfs.length; i++) {
+			const twoPdfArray = new Array(2);
+			twoPdfArray[0] = current;
+			twoPdfArray[1] = pdfs[i];
+			current = merge_pdfs_wasm(twoPdfArray);
+			await new Promise((resolve) => setTimeout(resolve, 0)); // yield
 		}
-
-		if (
-			'navigator' in window &&
-			'hardwareConcurrency' in navigator &&
-			(navigator as any).hardwareConcurrency <= 2
-		) {
-			return 4 * 1024 ** 3;
-		}
-		return 8 * 1024 ** 3;
-	}
-
-	async function getPDFSize(url: string): Promise<number> {
-		const res = await fetch(url, {
-			method: 'HEAD',
-			headers: { Authorization: `Bearer ${token.value}` }
-		});
-		if (!res.ok) {
-			const rangeRes = await fetch(url, {
-				headers: {
-					Authorization: `Bearer ${token.value}`,
-					Range: 'bytes=0-0'
-				}
-			});
-			if (rangeRes.status === 206 || rangeRes.status === 200) {
-				const contentRange = rangeRes.headers.get('Content-Range') || '';
-				const total = contentRange.split('/').pop();
-				if (total && !isNaN(Number(total))) {
-					return Number(total);
-				}
-			}
-			throw new Error(`Cannot determine size: ${url}`);
-		}
-		const length = res.headers.get('Content-Length');
-		return length ? parseInt(length, 10) : 0;
+		return current;
 	}
 
 	async function fetchPdfAsUint8Array(url: string): Promise<Uint8Array> {
@@ -110,15 +76,6 @@
 		if (!res.ok) throw new Error(`Failed to access: ${url}`);
 		const arrayBuffer = await res.arrayBuffer();
 		return new Uint8Array(arrayBuffer);
-	}
-
-	async function mergeSequentially(pdfs: Uint8Array[]): Promise<Uint8Array> {
-		let current = pdfs[0];
-		for (let i = 1; i < pdfs.length; i++) {
-			current = merge_pdfs_wasm([current, pdfs[i]]);
-			await new Promise((resolve) => setTimeout(resolve, 0));
-		}
-		return current;
 	}
 
 	function groupByUser(items: QueueItem[]): Record<string, QueueItem[]> {
@@ -186,24 +143,6 @@
 		for (const f of files) mergingFiles[f] = true;
 
 		try {
-			let totalSize = 0;
-			try {
-				const sizePromises = files.map((url) => getPDFSize(url));
-				const sizes = await Promise.all(sizePromises);
-				totalSize = sizes.reduce((sum, s) => sum + s, 0);
-			} catch (sizeErr) {
-				console.warn('Size estimation failed, assuming safe merge:', sizeErr);
-				totalSize = 0;
-			}
-
-			const useSequential =
-				totalSize > 0 &&
-				(() => {
-					const mem = getEstimatedMemory();
-					const threshold = mem * 0.8;
-					return totalSize >= threshold;
-				})();
-
 			const uint8Arrays: Uint8Array[] = [];
 			for (const fileUrl of files) {
 				const uint8 = await fetchPdfAsUint8Array(fileUrl);
@@ -211,17 +150,16 @@
 			}
 
 			let mergedBytes: Uint8Array;
-			if (useSequential && uint8Arrays.length > 1) {
-				mergedBytes = await mergeSequentially(uint8Arrays);
+			if (uint8Arrays.length > 1) {
+				mergedBytes = await mergeSequentiallyUsingWasm(uint8Arrays);
 			} else {
-				mergedBytes = merge_pdfs_wasm(uint8Arrays);
+				mergedBytes = uint8Arrays[0];
 			}
 
 			const mergedBlob = new Blob([mergedBytes.slice()], { type: 'application/pdf' });
 			const url = URL.createObjectURL(mergedBlob);
 			activeMergedBlobs.add(url);
 
-			// 🔧 FIXED: Declare selectedIndices
 			const selectedIndices: number[] = [];
 			for (const [idx, item] of userItems.entries()) {
 				if (files.includes(item.file)) {
@@ -273,24 +211,6 @@
 		for (const f of filesToMerge) mergingFiles[f] = true;
 
 		try {
-			let totalSize = 0;
-			try {
-				const sizePromises = filesToMerge.map((url) => getPDFSize(url));
-				const sizes = await Promise.all(sizePromises);
-				totalSize = sizes.reduce((sum, s) => sum + s, 0);
-			} catch (sizeErr) {
-				console.warn('Size estimation failed:', sizeErr);
-				totalSize = 0;
-			}
-
-			const useSequential =
-				totalSize > 0 &&
-				(() => {
-					const mem = getEstimatedMemory();
-					const threshold = mem * 0.8;
-					return totalSize >= threshold;
-				})();
-
 			const uint8Arrays: Uint8Array[] = [];
 			for (const fileUrl of filesToMerge) {
 				const uint8 = await fetchPdfAsUint8Array(fileUrl);
@@ -298,10 +218,10 @@
 			}
 
 			let mergedBytes: Uint8Array;
-			if (useSequential && uint8Arrays.length > 1) {
-				mergedBytes = await mergeSequentially(uint8Arrays);
+			if (uint8Arrays.length > 1) {
+				mergedBytes = await mergeSequentiallyUsingWasm(uint8Arrays);
 			} else {
-				mergedBytes = merge_pdfs_wasm(uint8Arrays);
+				mergedBytes = uint8Arrays[0];
 			}
 
 			const mergedBlob = new Blob([mergedBytes.slice()], { type: 'application/pdf' });
@@ -584,7 +504,6 @@
 							</p>
 						</div>
 						<div class="flex flex-wrap gap-2">
-							<!-- Per-user Merge All -->
 							<Button
 								variant="outline"
 								size="sm"
@@ -601,7 +520,6 @@
 								{/if}
 							</Button>
 
-							<!-- Merge Selected (optional) -->
 							<Button
 								variant="default"
 								size="sm"
