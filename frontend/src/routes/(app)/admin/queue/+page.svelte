@@ -29,7 +29,7 @@
 		TooltipTrigger
 	} from '$lib/components/ui/tooltip';
 
-	// ✅ Lucide Icons (all from lucide-svelte)
+	// ✅ Lucide Icons
 	import {
 		FileText,
 		Printer,
@@ -70,9 +70,12 @@
 	let selectedItems = $state<Record<string, Record<string, boolean>>>({});
 	let mergingAllForUser = $state<Record<string, boolean>>({});
 
+	// Track all active blob URLs to clean up properly
 	const activeMergedBlobs = new Set<string>();
+	const activePreviewBlobs = new Set<string>();
+	const activeNewTabBlobs = new Set<string>();
 
-	// ✅ Merge using pdf-lib
+	// Merge using pdf-lib
 	async function mergePdfsUsingPdfLib(pdfUrls: string[]): Promise<Uint8Array> {
 		if (pdfUrls.length === 0) throw new Error('No PDFs to merge');
 		if (pdfUrls.length === 1) {
@@ -111,9 +114,8 @@
 		);
 	}
 
-	// No WASM init needed
 	onMount(() => {
-		// pdf-lib is pure JS
+		// pdf-lib is pure JS — no WASM init needed
 	});
 
 	$effect(() => {
@@ -266,7 +268,6 @@
 			for (const f of filesToMerge) delete mergingFiles[f];
 		}
 	}
-
 	function unmerge(user: string, fileUrl: string) {
 		const userItems = groupedQueue[user] || [];
 		const mergedIndex = userItems.findIndex((item) => item.file === fileUrl && item.isMerged);
@@ -278,7 +279,7 @@
 			return;
 		}
 
-		if (fileUrl.startsWith('blob:') && activeMergedBlobs.has(fileUrl)) {
+		if (fileUrl.startsWith('blob:')) {
 			URL.revokeObjectURL(fileUrl);
 			activeMergedBlobs.delete(fileUrl);
 		}
@@ -324,6 +325,7 @@
 				pdfUrl = URL.createObjectURL(blob);
 				blobToRevoke = pdfUrl;
 				shouldRevoke = true;
+				activePreviewBlobs.add(pdfUrl);
 			}
 
 			iframe = document.createElement('iframe');
@@ -350,6 +352,7 @@
 				}
 				if (shouldRevoke && blobToRevoke) {
 					URL.revokeObjectURL(blobToRevoke);
+					activePreviewBlobs.delete(blobToRevoke);
 				}
 			}, 10000);
 		} catch (err) {
@@ -359,6 +362,7 @@
 			}
 			if (blobToRevoke) {
 				URL.revokeObjectURL(blobToRevoke);
+				activePreviewBlobs.delete(blobToRevoke);
 			}
 		} finally {
 			printing = { ...printing, [url]: false };
@@ -376,6 +380,7 @@
 				if (!res.ok) throw new Error('PDF not accessible');
 				const blob = await res.blob();
 				previewUrl = URL.createObjectURL(blob);
+				activePreviewBlobs.add(previewUrl);
 			}
 		} catch (err) {
 			error = err instanceof Error ? `Preview error: ${err.message}` : 'Failed to load PDF preview';
@@ -386,55 +391,75 @@
 	}
 
 	function closePreview() {
-		if (previewUrl && !previewUrl.startsWith('http')) {
+		if (previewUrl && activePreviewBlobs.has(previewUrl)) {
 			URL.revokeObjectURL(previewUrl);
+			activePreviewBlobs.delete(previewUrl);
 		}
 		previewUrl = null;
 	}
 
 	function openInNewTab(url: string) {
-		if (url.startsWith('blob:')) {
-			error = 'Cannot open merged PDFs in a new tab. Use preview instead.';
-			return;
-		}
-
-		let blobUrl: string | null = null;
 		(async () => {
+			let finalUrl: string | null = null;
+			let needsRevoke = false;
+
 			try {
-				const res = await fetch(url, { headers: { Authorization: `Bearer ${token.value}` } });
-				if (!res.ok) throw new Error('Failed to fetch PDF for new tab');
-				const blob = await res.blob();
-				blobUrl = URL.createObjectURL(blob);
-				const win = window.open(blobUrl, '_blank');
+				if (url.startsWith('blob:')) {
+					finalUrl = url;
+				} else {
+					const res = await fetch(url, { headers: { Authorization: `Bearer ${token.value}` } });
+					if (!res.ok) throw new Error('Failed to fetch PDF for new tab');
+					const blob = await res.blob();
+					finalUrl = URL.createObjectURL(blob);
+					needsRevoke = true;
+					activeNewTabBlobs.add(finalUrl);
+				}
+
+				if (!finalUrl) return; // should not happen, but satisfies TS
+
+				const win = window.open(finalUrl, '_blank');
 				if (!win) {
 					error = 'Popup blocked. Please allow popups to open PDF in new tab.';
-					URL.revokeObjectURL(blobUrl);
-					blobUrl = null;
-				} else {
+					if (needsRevoke && finalUrl) {
+						URL.revokeObjectURL(finalUrl);
+						activeNewTabBlobs.delete(finalUrl);
+					}
+					return;
+				}
+
+				if (needsRevoke && finalUrl) {
 					setTimeout(() => {
-						if (blobUrl) {
-							URL.revokeObjectURL(blobUrl);
-							blobUrl = null;
+						if (activeNewTabBlobs.has(finalUrl!)) {
+							URL.revokeObjectURL(finalUrl!);
+							activeNewTabBlobs.delete(finalUrl!);
 						}
-					}, 60_000);
+					}, 120_000);
 				}
 			} catch (err) {
 				error =
 					err instanceof Error ? `New tab error: ${err.message}` : 'Failed to open in new tab';
-				if (blobUrl) {
-					URL.revokeObjectURL(blobUrl);
-					blobUrl = null;
+				if (needsRevoke && finalUrl) {
+					URL.revokeObjectURL(finalUrl);
+					activeNewTabBlobs.delete(finalUrl);
 				}
 			}
 		})();
 	}
-
 	onDestroy(() => {
 		for (const url of activeMergedBlobs) {
 			if (url.startsWith('blob:')) URL.revokeObjectURL(url);
 		}
+		for (const url of activePreviewBlobs) {
+			if (url.startsWith('blob:')) URL.revokeObjectURL(url);
+		}
+		for (const url of activeNewTabBlobs) {
+			if (url.startsWith('blob:')) URL.revokeObjectURL(url);
+		}
 		activeMergedBlobs.clear();
-		if (previewUrl && !previewUrl.startsWith('http')) {
+		activePreviewBlobs.clear();
+		activeNewTabBlobs.clear();
+
+		if (previewUrl && previewUrl.startsWith('blob:')) {
 			URL.revokeObjectURL(previewUrl);
 		}
 	});
@@ -647,16 +672,15 @@
 																	size="sm"
 																	class="rounded-l-none"
 																	onclick={() => openInNewTab(item.file)}
-																	disabled={mergingFiles[item.file] ||
-																		item.file.startsWith('blob:')}
+																	disabled={mergingFiles[item.file]}
 																	aria-label="Open in new tab"
 																>
 																	<ExternalLink class="h-4 w-4" />
 																</Button>
 															</TooltipTrigger>
 															<TooltipContent>
-																{item.file.startsWith('blob:')
-																	? 'Merged PDFs cannot be opened in a new tab — use Preview instead'
+																{item.isMerged
+																	? 'Open merged PDF in new tab'
 																	: 'Open in new browser tab'}
 															</TooltipContent>
 														</Tooltip>
