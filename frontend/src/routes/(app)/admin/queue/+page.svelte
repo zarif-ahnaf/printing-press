@@ -49,10 +49,10 @@
 	let previewUrl = $state<string | null>(null);
 	let previewLoading = $state(false);
 	let selectedItems = $state<Record<string, Record<string, boolean>>>({});
+	let mergingAllForUser = $state<Record<string, boolean>>({});
 
 	const activeMergedBlobs = new Set<string>();
 
-	// 🔍 Estimate available memory (in bytes)
 	function getEstimatedMemory(): number {
 		if ('memory' in performance) {
 			const mem = (performance as any).memory;
@@ -221,12 +221,15 @@
 			const url = URL.createObjectURL(mergedBlob);
 			activeMergedBlobs.add(url);
 
-			const fileToIndex = new Map<string, number>();
+			// 🔧 FIXED: Declare selectedIndices
+			const selectedIndices: number[] = [];
 			for (const [idx, item] of userItems.entries()) {
-				if (files.includes(item.file)) fileToIndex.set(item.file, idx);
+				if (files.includes(item.file)) {
+					selectedIndices.push(idx);
+				}
 			}
-			const selectedIndices = files.map((f) => fileToIndex.get(f)!);
-			const maxIndex = Math.max(...selectedIndices);
+			const maxIndex =
+				selectedIndices.length > 0 ? Math.max(...selectedIndices) : userItems.length - 1;
 			const insertIndex = maxIndex + 1;
 
 			const mergedItem: QueueItem = {
@@ -236,7 +239,8 @@
 				created_at: new Date().toISOString(),
 				user,
 				isMerged: true,
-				mergedFrom: files
+				mergedFrom: files,
+				hidden: false
 			};
 
 			const updatedItems = userItems.map((item) =>
@@ -253,6 +257,92 @@
 			merging = { ...merging, [user]: false };
 			mergingFiles = { ...mergingFiles };
 			for (const f of files) delete mergingFiles[f];
+		}
+	}
+
+	async function mergeAllForUser(user: string) {
+		const userItems = groupedQueue[user] || [];
+		const filesToMerge = userItems
+			.filter((item) => !item.hidden && !item.isMerged)
+			.map((item) => item.file);
+
+		if (filesToMerge.length === 0) return;
+
+		mergingAllForUser = { ...mergingAllForUser, [user]: true };
+		mergingFiles = { ...mergingFiles };
+		for (const f of filesToMerge) mergingFiles[f] = true;
+
+		try {
+			let totalSize = 0;
+			try {
+				const sizePromises = filesToMerge.map((url) => getPDFSize(url));
+				const sizes = await Promise.all(sizePromises);
+				totalSize = sizes.reduce((sum, s) => sum + s, 0);
+			} catch (sizeErr) {
+				console.warn('Size estimation failed:', sizeErr);
+				totalSize = 0;
+			}
+
+			const useSequential =
+				totalSize > 0 &&
+				(() => {
+					const mem = getEstimatedMemory();
+					const threshold = mem * 0.8;
+					return totalSize >= threshold;
+				})();
+
+			const uint8Arrays: Uint8Array[] = [];
+			for (const fileUrl of filesToMerge) {
+				const uint8 = await fetchPdfAsUint8Array(fileUrl);
+				uint8Arrays.push(uint8);
+			}
+
+			let mergedBytes: Uint8Array;
+			if (useSequential && uint8Arrays.length > 1) {
+				mergedBytes = await mergeSequentially(uint8Arrays);
+			} else {
+				mergedBytes = merge_pdfs_wasm(uint8Arrays);
+			}
+
+			const mergedBlob = new Blob([mergedBytes.slice()], { type: 'application/pdf' });
+			const url = URL.createObjectURL(mergedBlob);
+			activeMergedBlobs.add(url);
+
+			const selectedIndices: number[] = [];
+			for (const [idx, item] of userItems.entries()) {
+				if (filesToMerge.includes(item.file)) {
+					selectedIndices.push(idx);
+				}
+			}
+			const maxIndex =
+				selectedIndices.length > 0 ? Math.max(...selectedIndices) : userItems.length - 1;
+			const insertIndex = maxIndex + 1;
+
+			const mergedItem: QueueItem = {
+				id: -1,
+				file: url,
+				processed: true,
+				created_at: new Date().toISOString(),
+				user,
+				isMerged: true,
+				mergedFrom: filesToMerge,
+				hidden: false
+			};
+
+			const updatedItems = userItems.map((item) =>
+				filesToMerge.includes(item.file) ? { ...item, hidden: true } : item
+			);
+			const finalItems = [...updatedItems];
+			finalItems.splice(insertIndex, 0, mergedItem);
+
+			groupedQueue = { ...groupedQueue, [user]: finalItems };
+			selectedItems = { ...selectedItems, [user]: {} };
+		} catch (err) {
+			error = err instanceof Error ? `Merge error: ${err.message}` : 'Merge failed';
+		} finally {
+			mergingAllForUser = { ...mergingAllForUser, [user]: false };
+			mergingFiles = { ...mergingFiles };
+			for (const f of filesToMerge) delete mergingFiles[f];
 		}
 	}
 
@@ -493,21 +583,41 @@
 									: ''}
 							</p>
 						</div>
-						<Button
-							variant="default"
-							size="sm"
-							disabled={merging[user] ||
-								Object.values(selectedItems[user] || {}).filter(Boolean).length === 0}
-							onclick={() => mergePdfs(user)}
-						>
-							{#if merging[user]}
-								<LoaderCircle class="mr-2 h-4 w-4 animate-spin" />
-								Merging...
-							{:else}
-								<Merge class="mr-2 h-4 w-4" />
-								Merge Selected
-							{/if}
-						</Button>
+						<div class="flex flex-wrap gap-2">
+							<!-- Per-user Merge All -->
+							<Button
+								variant="outline"
+								size="sm"
+								disabled={mergingAllForUser[user] ||
+									items.filter((i) => !i.hidden && !i.isMerged).length === 0}
+								onclick={() => mergeAllForUser(user)}
+							>
+								{#if mergingAllForUser[user]}
+									<LoaderCircle class="mr-2 h-4 w-4 animate-spin" />
+									Merging All...
+								{:else}
+									<Merge class="mr-2 h-4 w-4" />
+									Merge All
+								{/if}
+							</Button>
+
+							<!-- Merge Selected (optional) -->
+							<Button
+								variant="default"
+								size="sm"
+								disabled={merging[user] ||
+									Object.values(selectedItems[user] || {}).filter(Boolean).length === 0}
+								onclick={() => mergePdfs(user)}
+							>
+								{#if merging[user]}
+									<LoaderCircle class="mr-2 h-4 w-4 animate-spin" />
+									Merging...
+								{:else}
+									<Merge class="mr-2 h-4 w-4" />
+									Merge Selected
+								{/if}
+							</Button>
+						</div>
 					</div>
 
 					<Table>
@@ -554,7 +664,6 @@
 										</TableCell>
 										<TableCell class="text-right">
 											<div class="flex justify-end gap-2">
-												<!-- Split button: Preview + Open in new tab -->
 												<div class="flex rounded-md border border-input shadow-sm">
 													<Button
 														variant="outline"
