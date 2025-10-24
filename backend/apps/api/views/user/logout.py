@@ -1,9 +1,11 @@
-from ...models import Token
+from http import HTTPStatus
+
 from django.http import HttpResponse
 from ninja import Router
-from http import HTTPStatus
+
 from ...auth import AuthBearer
 from ...http import HttpRequest
+from ...models import Token
 
 router = Router(tags=["User"])
 

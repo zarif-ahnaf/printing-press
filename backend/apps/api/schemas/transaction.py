@@ -1,5 +1,6 @@
 from ninja import Schema
 
+
 class TransactionResponse(Schema):
     id: int
     transaction_type: str

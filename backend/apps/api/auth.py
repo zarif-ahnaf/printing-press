@@ -2,10 +2,10 @@ import logging
 from typing import Any
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.http import HttpRequest
 from ninja.security import HttpBearer
-from django.contrib.auth import get_user_model
 
 from .models import Token
 

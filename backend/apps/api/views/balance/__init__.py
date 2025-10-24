@@ -1,9 +1,11 @@
 # your_app/api.py
-from ninja import Router, Schema
-from django.shortcuts import get_object_or_404
-from apps.wallet.models import Wallet
-from ...auth import AuthBearer
 from django.contrib.auth.models import User
+from django.shortcuts import get_object_or_404
+from ninja import Router, Schema
+
+from apps.wallet.models import Wallet
+
+from ...auth import AuthBearer
 from ...decorators import admin_required
 
 router = Router()

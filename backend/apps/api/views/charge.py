@@ -1,14 +1,17 @@
+from decimal import Decimal, InvalidOperation
+
+from django.contrib.auth.models import User
+from django.db import transaction as db_transaction
 from django.shortcuts import get_object_or_404
 from ninja import Router
 from ninja.errors import HttpError
-from decimal import Decimal, InvalidOperation
-from django.db import transaction as db_transaction
-from django.contrib.auth.models import User
-from apps.wallet.models import Wallet, Transaction
+
+from apps.wallet.models import Transaction, Wallet
+
 from ..auth import AuthBearer
+from ..decorators import admin_required
 from ..http import HttpRequest
 from ..schemas.wallet import ChargeRequest, ChargeResponse
-from ..decorators import admin_required
 
 router = Router(tags=["Wallet"])
 

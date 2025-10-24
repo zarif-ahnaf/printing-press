@@ -1,9 +1,9 @@
-from ...models import Token
 from django.contrib.auth import authenticate
 from django.http import Http404, HttpRequest
 from ninja import Router
-from ...schemas.login import LoginInSchema, LoginOutSchema
 
+from ...models import Token
+from ...schemas.login import LoginInSchema, LoginOutSchema
 
 router = Router(tags=["User"])
 

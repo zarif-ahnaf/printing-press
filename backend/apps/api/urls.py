@@ -1,11 +1,12 @@
-from django.urls import path
-from django.conf import settings
-from ninja import NinjaAPI
-from pathlib import Path
 import importlib
-import sys
-from ninja.router import Router
 import logging
+import sys
+from pathlib import Path
+
+from django.conf import settings
+from django.urls import path
+from ninja import NinjaAPI
+from ninja.router import Router
 
 # Set up logging
 logger = logging.getLogger(__name__)
@@ -87,7 +88,7 @@ def register_routers():
                 f"Successfully registered router from {full_module_name} at {url_prefix or '/'}"
             )
 
-        except Exception as e:
+        except Exception:
             logger.exception(
                 f"Failed to load router module '{full_module_name}' "
                 f"from file '{py_file}'. Skipping this module."

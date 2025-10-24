@@ -1,6 +1,7 @@
-from ninja.files import UploadedFile
-import fitz
 from typing import Optional
+
+import fitz
+from ninja.files import UploadedFile
 
 
 def extract_non_blank_pages(doc: fitz.Document, text_threshold: int = 10) -> list[int]:

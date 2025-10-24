@@ -1,6 +1,7 @@
 from ninja import Router
-from ...http import HttpRequest
+
 from ...auth import AuthBearer
+from ...http import HttpRequest
 from ...schemas.user import UserSchema
 
 router = Router()

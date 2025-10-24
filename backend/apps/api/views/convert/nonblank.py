@@ -1,8 +1,9 @@
-from ninja import Router, File, Form
+from django.http import Http404, HttpResponse
+from ninja import File, Form, Router
 from ninja.files import UploadedFile
-from django.http import HttpResponse, Http404
-from ...utils.pdf import process_pdf_file
+
 from ...http import HttpRequest
+from ...utils.pdf import process_pdf_file
 
 router = Router(tags=["PDF"])
 

@@ -1,7 +1,6 @@
-from pathlib import Path
-import subprocess
 import shutil
-
+import subprocess
+from pathlib import Path
 
 LOEXE = shutil.which("soffice")
 

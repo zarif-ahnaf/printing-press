@@ -22,3 +22,7 @@ dependencies = [
 
 [dependency-groups]
 dev = ["django-stubs>=5.2.5", "ruff>=0.13.3"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+ignore = ["E501"]

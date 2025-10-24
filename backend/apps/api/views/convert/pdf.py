@@ -1,10 +1,12 @@
-from ninja import Router, File
-from ninja.files import UploadedFile
-from django.http import HttpResponse
 import tempfile
 from pathlib import Path
-from ...utils.docx import doc2pdf
+
+from django.http import HttpResponse
+from ninja import File, Router
+from ninja.files import UploadedFile
+
 from ...http import HttpRequest
+from ...utils.docx import doc2pdf
 
 router = Router(tags=["PDF"])
 

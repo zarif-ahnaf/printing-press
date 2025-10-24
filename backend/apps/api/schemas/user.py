@@ -1,5 +1,6 @@
-from ninja import Schema
 import datetime
+
+from ninja import Schema
 
 
 class UserSchema(Schema):

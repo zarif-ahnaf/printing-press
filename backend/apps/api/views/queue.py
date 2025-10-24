@@ -1,23 +1,26 @@
-from ninja import Router, File, Form
-from ninja.files import UploadedFile
-from ninja.errors import HttpError
-from ..auth import AuthBearer
-from apps.queue.models import Queue
-from apps.wallet.models import Wallet, Transaction
-from django.db import transaction
-from django.contrib.auth.models import User
 from decimal import Decimal
+
+from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
-from ..utils.pdf import count_pdf_pages
-from ..http import HttpRequest
+from django.db import transaction
 from django.shortcuts import get_object_or_404
+from ninja import File, Form, Router
+from ninja.errors import HttpError
+from ninja.files import UploadedFile
+
+from apps.queue.models import Queue
+from apps.wallet.models import Transaction, Wallet
+
+from ..auth import AuthBearer
+from ..decorators import login_required
+from ..http import HttpRequest
 from ..schemas.queue import (
-    QueueUploadResponse,
-    QueueListResponse,
     ProcessStatusResponse,
     QueueFileUpload,
+    QueueListResponse,
+    QueueUploadResponse,
 )
-from ..decorators import login_required
+from ..utils.pdf import count_pdf_pages
 
 router = Router(tags=["Queue"])
 

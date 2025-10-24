@@ -4,15 +4,14 @@ from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
-
     dependencies = [
-        ('queue', '0001_initial'),
+        ("queue", "0001_initial"),
     ]
 
     operations = [
         migrations.AlterField(
-            model_name='queue',
-            name='file',
-            field=models.FileField(upload_to=''),
+            model_name="queue",
+            name="file",
+            field=models.FileField(upload_to=""),
         ),
     ]

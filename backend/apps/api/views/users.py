@@ -1,11 +1,10 @@
-from ninja import Router, Query
+from django.contrib.auth.models import User
+from django.db.models import Q
+from ninja import Query, Router
 
 from ..filters.user import UserFilter
 from ..http import HttpRequest
-from django.contrib.auth.models import User
 from ..schemas.user import UserSchema
-from django.db.models import Q
-
 
 router = Router(tags=["User"])
 

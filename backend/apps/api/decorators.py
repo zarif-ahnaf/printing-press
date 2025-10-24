@@ -1,7 +1,9 @@
 from functools import wraps
-from ninja.errors import HttpError
-from .http import HttpRequest
+
 from django.contrib.auth.models import AnonymousUser
+from ninja.errors import HttpError
+
+from .http import HttpRequest
 
 
 def admin_required(view_func):
