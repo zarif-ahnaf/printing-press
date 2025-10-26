@@ -565,7 +565,7 @@
 					<UsersIcon class="h-4 w-4 text-muted-foreground" />
 					<span class="text-sm font-medium">Upload for:</span>
 
-					<div class="relative w-[240px]">
+					<div class="relative w-60">
 						<div
 							class="flex items-center rounded-md border border-input bg-background px-3 py-2 focus-within:ring-1 focus-within:ring-ring"
 						>
@@ -718,7 +718,7 @@
 						</div>
 					{/if}
 
-					<div class="relative aspect-[3/4] w-full bg-muted">
+					<div class="relative aspect-3/4 w-full bg-muted">
 						{#if pdfFile.previewUrl}
 							<embed
 								src={pdfFile.previewUrl}

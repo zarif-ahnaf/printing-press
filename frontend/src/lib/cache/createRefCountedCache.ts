@@ -1,10 +1,10 @@
-// src/lib/utils/createRefCountedCache.ts
+import { SvelteMap as Map } from 'svelte/reactivity';
 
 export interface RefCountedCache<T> {
 	get(key: string): T | null;
 	set(key: string, value: T): void;
 	incrementRef(key: string): void;
-	decrementRef(key: string): boolean; // returns true if ref count hit 0
+	decrementRef(key: string): boolean;
 	has(key: string): boolean;
 	getRefCount(key: string): number;
 	evictAll(): void;

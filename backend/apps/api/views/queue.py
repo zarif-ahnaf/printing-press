@@ -115,6 +115,7 @@ def list_queue(
             "processed": item.processed,
             "created_at": item.created_at.isoformat(),
             "user": item.user.username,
+            "user_id": item.user.pk,
         }
         for item in queryset
     ]

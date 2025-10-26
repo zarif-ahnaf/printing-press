@@ -1,5 +1,3 @@
 import { v4 } from 'uuid';
 
-export function uuidv4() {
-	return v4();
-}
+export { v4 as uuidv4 };
