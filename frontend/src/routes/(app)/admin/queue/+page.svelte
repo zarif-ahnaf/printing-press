@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onDestroy, onMount } from 'svelte';
+	import { onDestroy } from 'svelte';
 
 	// UI Components
 	import {
@@ -29,7 +29,7 @@
 		TooltipTrigger
 	} from '$lib/components/ui/tooltip';
 
-	// ✅ Lucide Icons
+	// Lucide Icons
 	import {
 		FileText,
 		Printer,
@@ -41,11 +41,11 @@
 		ChevronRight
 	} from 'lucide-svelte';
 
-	import { QUEUE_URL } from '$lib/constants/backend';
+	import { MERGE_ENDPOINT, QUEUE_URL } from '$lib/constants/backend';
 	import { token } from '$lib/stores/token.svelte';
 
-	// ✅ pdf-lib for client-side merging
-	import { PDFDocument } from 'pdf-lib';
+	// ✅ Generic cache
+	import { createCache } from '$lib/utils/cache';
 
 	interface QueueItem {
 		id: number;
@@ -70,37 +70,15 @@
 	let selectedItems = $state<Record<string, Record<string, boolean>>>({});
 	let mergingAllForUser = $state<Record<string, boolean>>({});
 
-	// Track all active blob URLs to clean up properly
-	const activeMergedBlobs = new Set<string>();
-	const activePreviewBlobs = new Set<string>();
-	const activeNewTabBlobs = new Set<string>();
+	// 🔥 Caches
+	const mergedPdfUrlCache = createCache<string>(); // key: file hash → blob URL
+	const fetchedPdfBlobCache = createCache<string>(); // key: original URL → blob URL
 
-	// Merge using pdf-lib
-	async function mergePdfsUsingPdfLib(pdfUrls: string[]): Promise<Uint8Array> {
-		if (pdfUrls.length === 0) throw new Error('No PDFs to merge');
-		if (pdfUrls.length === 1) {
-			const uint8 = await fetchPdfAsUint8Array(pdfUrls[0]);
-			return uint8;
-		}
+	// Track ALL blob URLs for cleanup (both caches)
+	const activeBlobUrls = new Set<string>();
 
-		const mergedPdf = await PDFDocument.create();
-		for (const url of pdfUrls) {
-			const uint8 = await fetchPdfAsUint8Array(url);
-			const sourcePdf = await PDFDocument.load(uint8, { ignoreEncryption: true });
-			const copiedPages = await mergedPdf.copyPages(sourcePdf, sourcePdf.getPageIndices());
-			copiedPages.forEach((page) => mergedPdf.addPage(page));
-			await new Promise((resolve) => setTimeout(resolve, 0)); // yield to UI
-		}
-		return await mergedPdf.save();
-	}
-
-	async function fetchPdfAsUint8Array(url: string): Promise<Uint8Array> {
-		const res = await fetch(url, {
-			headers: { Authorization: `Bearer ${token.value}` }
-		});
-		if (!res.ok) throw new Error(`Failed to access: ${url}`);
-		const arrayBuffer = await res.arrayBuffer();
-		return new Uint8Array(arrayBuffer);
+	function hashFiles(files: string[]): string {
+		return files.slice().sort().join('|');
 	}
 
 	function groupByUser(items: QueueItem[]): Record<string, QueueItem[]> {
@@ -114,9 +92,169 @@
 		);
 	}
 
-	onMount(() => {
-		// pdf-lib is pure JS — no WASM init needed
-	});
+	// 🔥 Fetch PDF and cache the blob URL
+	async function fetchAndCachePdf(url: string): Promise<string> {
+		if (url.startsWith('blob:')) {
+			return url;
+		}
+
+		const cached = fetchedPdfBlobCache.get(url);
+		if (cached) return cached;
+
+		const res = await fetch(url, {
+			headers: { Authorization: `Bearer ${token.value}` }
+		});
+		if (!res.ok) throw new Error(`Failed to fetch PDF: ${url}`);
+		const blob = await res.blob();
+		const blobUrl = URL.createObjectURL(blob);
+		fetchedPdfBlobCache.set(url, blobUrl);
+		activeBlobUrls.add(blobUrl);
+		return blobUrl;
+	}
+
+	async function mergePdfsBackend(user: string) {
+		const files = Object.entries(selectedItems[user] || {})
+			.filter(([, checked]) => checked)
+			.map(([file]) => file);
+
+		if (files.length === 0) return;
+
+		const cacheKey = hashFiles(files);
+		const cachedUrl = mergedPdfUrlCache.get(cacheKey);
+		if (cachedUrl) {
+			insertMergedItem(user, files, cachedUrl);
+			selectedItems = { ...selectedItems, [user]: {} };
+			return;
+		}
+
+		const userItems = groupedQueue[user] || [];
+		merging = { ...merging, [user]: true };
+		mergingFiles = { ...mergingFiles };
+		for (const f of files) mergingFiles[f] = true;
+
+		try {
+			const formData = new FormData();
+			for (const url of files) {
+				const blobUrl = await fetchAndCachePdf(url);
+				const res = await fetch(blobUrl);
+				const blob = await res.blob();
+				formData.append('files', blob, url.split('/').pop() || 'file.pdf');
+			}
+
+			const mergeRes = await fetch(MERGE_ENDPOINT, {
+				method: 'POST',
+				body: formData,
+				headers: { Authorization: `Bearer ${token.value}` }
+			});
+
+			if (!mergeRes.ok) {
+				const text = await mergeRes.text();
+				throw new Error(`Merge failed: ${text}`);
+			}
+
+			const mergedBlob = await mergeRes.blob();
+			const url = URL.createObjectURL(mergedBlob);
+			mergedPdfUrlCache.set(cacheKey, url);
+			activeBlobUrls.add(url);
+
+			insertMergedItem(user, files, url);
+			selectedItems = { ...selectedItems, [user]: {} };
+		} catch (err) {
+			error = err instanceof Error ? `Merge error: ${err.message}` : 'Merge failed';
+		} finally {
+			merging = { ...merging, [user]: false };
+			mergingFiles = { ...mergingFiles };
+			for (const f of files) delete mergingFiles[f];
+		}
+	}
+
+	async function mergeAllForUserBackend(user: string) {
+		const userItems = groupedQueue[user] || [];
+		const filesToMerge = userItems
+			.filter((item) => !item.hidden && !item.isMerged)
+			.map((item) => item.file);
+
+		if (filesToMerge.length === 0) return;
+
+		const cacheKey = hashFiles(filesToMerge);
+		const cachedUrl = mergedPdfUrlCache.get(cacheKey);
+		if (cachedUrl) {
+			insertMergedItem(user, filesToMerge, cachedUrl);
+			selectedItems = { ...selectedItems, [user]: {} };
+			return;
+		}
+
+		mergingAllForUser = { ...mergingAllForUser, [user]: true };
+		mergingFiles = { ...mergingFiles };
+		for (const f of filesToMerge) mergingFiles[f] = true;
+
+		try {
+			const formData = new FormData();
+			for (const url of filesToMerge) {
+				const blobUrl = await fetchAndCachePdf(url);
+				const res = await fetch(blobUrl);
+				const blob = await res.blob();
+				formData.append('files', blob, url.split('/').pop() || 'file.pdf');
+			}
+
+			const mergeRes = await fetch('http://127.0.0.1:8000/api/convert/merge/', {
+				method: 'POST',
+				body: formData,
+				headers: { Authorization: `Bearer ${token.value}` }
+			});
+
+			if (!mergeRes.ok) {
+				const text = await mergeRes.text();
+				throw new Error(`Merge failed: ${text}`);
+			}
+
+			const mergedBlob = await mergeRes.blob();
+			const url = URL.createObjectURL(mergedBlob);
+			mergedPdfUrlCache.set(cacheKey, url);
+			activeBlobUrls.add(url);
+
+			insertMergedItem(user, filesToMerge, url);
+			selectedItems = { ...selectedItems, [user]: {} };
+		} catch (err) {
+			error = err instanceof Error ? `Merge error: ${err.message}` : 'Merge failed';
+		} finally {
+			mergingAllForUser = { ...mergingAllForUser, [user]: false };
+			mergingFiles = { ...mergingFiles };
+			for (const f of filesToMerge) delete mergingFiles[f];
+		}
+	}
+
+	function insertMergedItem(user: string, files: string[], url: string) {
+		const userItems = groupedQueue[user] || [];
+		const selectedIndices: number[] = [];
+		for (const [idx, item] of userItems.entries()) {
+			if (files.includes(item.file)) {
+				selectedIndices.push(idx);
+			}
+		}
+		const maxIndex =
+			selectedIndices.length > 0 ? Math.max(...selectedIndices) : userItems.length - 1;
+		const insertIndex = maxIndex + 1;
+
+		const mergedItem: QueueItem = {
+			id: -1,
+			file: url,
+			processed: true,
+			created_at: new Date().toISOString(),
+			user,
+			isMerged: true,
+			mergedFrom: files,
+			hidden: false
+		};
+
+		const updatedItems = userItems.map((item) =>
+			files.includes(item.file) ? { ...item, hidden: true } : item
+		);
+		const finalItems = [...updatedItems];
+		finalItems.splice(insertIndex, 0, mergedItem);
+
+		groupedQueue = { ...groupedQueue, [user]: finalItems };
+	}
 
 	$effect(() => {
 		async function fetchQueue() {
@@ -154,120 +292,7 @@
 		};
 	}
 
-	async function mergePdfs(user: string) {
-		const files = Object.entries(selectedItems[user] || {})
-			.filter(([, checked]) => checked)
-			.map(([file]) => file);
-
-		if (files.length === 0) return;
-
-		const userItems = groupedQueue[user] || [];
-
-		merging = { ...merging, [user]: true };
-		mergingFiles = { ...mergingFiles };
-		for (const f of files) mergingFiles[f] = true;
-
-		try {
-			const mergedBytes = await mergePdfsUsingPdfLib(files);
-
-			const mergedBlob = new Blob([mergedBytes.slice()], { type: 'application/pdf' });
-			const url = URL.createObjectURL(mergedBlob);
-			activeMergedBlobs.add(url);
-
-			const selectedIndices: number[] = [];
-			for (const [idx, item] of userItems.entries()) {
-				if (files.includes(item.file)) {
-					selectedIndices.push(idx);
-				}
-			}
-			const maxIndex =
-				selectedIndices.length > 0 ? Math.max(...selectedIndices) : userItems.length - 1;
-			const insertIndex = maxIndex + 1;
-
-			const mergedItem: QueueItem = {
-				id: -1,
-				file: url,
-				processed: true,
-				created_at: new Date().toISOString(),
-				user,
-				isMerged: true,
-				mergedFrom: files,
-				hidden: false
-			};
-
-			const updatedItems = userItems.map((item) =>
-				files.includes(item.file) ? { ...item, hidden: true } : item
-			);
-			const finalItems = [...updatedItems];
-			finalItems.splice(insertIndex, 0, mergedItem);
-
-			groupedQueue = { ...groupedQueue, [user]: finalItems };
-			selectedItems = { ...selectedItems, [user]: {} };
-		} catch (err) {
-			error = err instanceof Error ? `Merge error: ${err.message}` : 'Merge failed';
-		} finally {
-			merging = { ...merging, [user]: false };
-			mergingFiles = { ...mergingFiles };
-			for (const f of files) delete mergingFiles[f];
-		}
-	}
-
-	async function mergeAllForUser(user: string) {
-		const userItems = groupedQueue[user] || [];
-		const filesToMerge = userItems
-			.filter((item) => !item.hidden && !item.isMerged)
-			.map((item) => item.file);
-
-		if (filesToMerge.length === 0) return;
-
-		mergingAllForUser = { ...mergingAllForUser, [user]: true };
-		mergingFiles = { ...mergingFiles };
-		for (const f of filesToMerge) mergingFiles[f] = true;
-
-		try {
-			const mergedBytes = await mergePdfsUsingPdfLib(filesToMerge);
-
-			const mergedBlob = new Blob([mergedBytes.slice()], { type: 'application/pdf' });
-			const url = URL.createObjectURL(mergedBlob);
-			activeMergedBlobs.add(url);
-
-			const selectedIndices: number[] = [];
-			for (const [idx, item] of userItems.entries()) {
-				if (filesToMerge.includes(item.file)) {
-					selectedIndices.push(idx);
-				}
-			}
-			const maxIndex =
-				selectedIndices.length > 0 ? Math.max(...selectedIndices) : userItems.length - 1;
-			const insertIndex = maxIndex + 1;
-
-			const mergedItem: QueueItem = {
-				id: -1,
-				file: url,
-				processed: true,
-				created_at: new Date().toISOString(),
-				user,
-				isMerged: true,
-				mergedFrom: filesToMerge,
-				hidden: false
-			};
-
-			const updatedItems = userItems.map((item) =>
-				filesToMerge.includes(item.file) ? { ...item, hidden: true } : item
-			);
-			const finalItems = [...updatedItems];
-			finalItems.splice(insertIndex, 0, mergedItem);
-
-			groupedQueue = { ...groupedQueue, [user]: finalItems };
-			selectedItems = { ...selectedItems, [user]: {} };
-		} catch (err) {
-			error = err instanceof Error ? `Merge error: ${err.message}` : 'Merge failed';
-		} finally {
-			mergingAllForUser = { ...mergingAllForUser, [user]: false };
-			mergingFiles = { ...mergingFiles };
-			for (const f of filesToMerge) delete mergingFiles[f];
-		}
-	}
+	// 🔥 FIXED: No cache eviction or blob revocation on unmerge
 	function unmerge(user: string, fileUrl: string) {
 		const userItems = groupedQueue[user] || [];
 		const mergedIndex = userItems.findIndex((item) => item.file === fileUrl && item.isMerged);
@@ -279,10 +304,7 @@
 			return;
 		}
 
-		if (fileUrl.startsWith('blob:')) {
-			URL.revokeObjectURL(fileUrl);
-			activeMergedBlobs.delete(fileUrl);
-		}
+		// DO NOT revoke blob or delete from cache — merged result is still valid
 
 		const withoutMerged = [...userItems];
 		withoutMerged.splice(mergedIndex, 1);
@@ -310,23 +332,9 @@
 	async function printPdf(url: string) {
 		printing = { ...printing, [url]: true };
 		let iframe: HTMLIFrameElement | null = null;
-		let blobToRevoke: string | null = null;
 
 		try {
-			let pdfUrl: string;
-			let shouldRevoke = false;
-
-			if (url.startsWith('blob:')) {
-				pdfUrl = url;
-			} else {
-				const res = await fetch(url, { headers: { Authorization: `Bearer ${token.value}` } });
-				if (!res.ok) throw new Error('Failed to fetch PDF');
-				const blob = await res.blob();
-				pdfUrl = URL.createObjectURL(blob);
-				blobToRevoke = pdfUrl;
-				shouldRevoke = true;
-				activePreviewBlobs.add(pdfUrl);
-			}
+			const pdfBlobUrl = await fetchAndCachePdf(url);
 
 			iframe = document.createElement('iframe');
 			iframe.style.position = 'absolute';
@@ -335,11 +343,11 @@
 			iframe.style.width = '0';
 			iframe.style.height = '0';
 			iframe.setAttribute('aria-hidden', 'true');
+			iframe.src = pdfBlobUrl;
 
 			await new Promise<void>((resolve, reject) => {
 				iframe!.onload = () => resolve();
 				iframe!.onerror = () => reject(new Error('Failed to load PDF in iframe'));
-				iframe!.src = pdfUrl;
 				document.body.appendChild(iframe!);
 			});
 
@@ -348,21 +356,12 @@
 			setTimeout(() => {
 				if (iframe && document.body.contains(iframe)) {
 					document.body.removeChild(iframe);
-					iframe = null;
-				}
-				if (shouldRevoke && blobToRevoke) {
-					URL.revokeObjectURL(blobToRevoke);
-					activePreviewBlobs.delete(blobToRevoke);
 				}
 			}, 10000);
 		} catch (err) {
 			error = err instanceof Error ? `Print error: ${err.message}` : 'Print failed';
 			if (iframe && document.body.contains(iframe)) {
 				document.body.removeChild(iframe);
-			}
-			if (blobToRevoke) {
-				URL.revokeObjectURL(blobToRevoke);
-				activePreviewBlobs.delete(blobToRevoke);
 			}
 		} finally {
 			printing = { ...printing, [url]: false };
@@ -373,15 +372,7 @@
 		previewLoading = true;
 		previewUrl = null;
 		try {
-			if (url.startsWith('blob:')) {
-				previewUrl = url;
-			} else {
-				const res = await fetch(url, { headers: { Authorization: `Bearer ${token.value}` } });
-				if (!res.ok) throw new Error('PDF not accessible');
-				const blob = await res.blob();
-				previewUrl = URL.createObjectURL(blob);
-				activePreviewBlobs.add(previewUrl);
-			}
+			previewUrl = await fetchAndCachePdf(url);
 		} catch (err) {
 			error = err instanceof Error ? `Preview error: ${err.message}` : 'Failed to load PDF preview';
 			previewUrl = null;
@@ -391,77 +382,33 @@
 	}
 
 	function closePreview() {
-		if (previewUrl && activePreviewBlobs.has(previewUrl)) {
-			URL.revokeObjectURL(previewUrl);
-			activePreviewBlobs.delete(previewUrl);
-		}
 		previewUrl = null;
 	}
 
-	function openInNewTab(url: string) {
-		(async () => {
-			let finalUrl: string | null = null;
-			let needsRevoke = false;
-
-			try {
-				if (url.startsWith('blob:')) {
-					finalUrl = url;
-				} else {
-					const res = await fetch(url, { headers: { Authorization: `Bearer ${token.value}` } });
-					if (!res.ok) throw new Error('Failed to fetch PDF for new tab');
-					const blob = await res.blob();
-					finalUrl = URL.createObjectURL(blob);
-					needsRevoke = true;
-					activeNewTabBlobs.add(finalUrl);
-				}
-
-				if (!finalUrl) return; // should not happen, but satisfies TS
-
-				const win = window.open(finalUrl, '_blank');
-				if (!win) {
-					error = 'Popup blocked. Please allow popups to open PDF in new tab.';
-					if (needsRevoke && finalUrl) {
-						URL.revokeObjectURL(finalUrl);
-						activeNewTabBlobs.delete(finalUrl);
-					}
-					return;
-				}
-
-				if (needsRevoke && finalUrl) {
-					setTimeout(() => {
-						if (activeNewTabBlobs.has(finalUrl!)) {
-							URL.revokeObjectURL(finalUrl!);
-							activeNewTabBlobs.delete(finalUrl!);
-						}
-					}, 120_000);
-				}
-			} catch (err) {
-				error =
-					err instanceof Error ? `New tab error: ${err.message}` : 'Failed to open in new tab';
-				if (needsRevoke && finalUrl) {
-					URL.revokeObjectURL(finalUrl);
-					activeNewTabBlobs.delete(finalUrl);
-				}
+	async function openInNewTab(url: string) {
+		try {
+			const finalUrl = await fetchAndCachePdf(url);
+			const win = window.open(finalUrl, '_blank');
+			if (!win) {
+				error = 'Popup blocked. Please allow popups.';
 			}
-		})();
+		} catch (err) {
+			error = err instanceof Error ? `New tab error: ${err.message}` : 'Failed to open in new tab';
+		}
 	}
-	onDestroy(() => {
-		for (const url of activeMergedBlobs) {
-			if (url.startsWith('blob:')) URL.revokeObjectURL(url);
-		}
-		for (const url of activePreviewBlobs) {
-			if (url.startsWith('blob:')) URL.revokeObjectURL(url);
-		}
-		for (const url of activeNewTabBlobs) {
-			if (url.startsWith('blob:')) URL.revokeObjectURL(url);
-		}
-		activeMergedBlobs.clear();
-		activePreviewBlobs.clear();
-		activeNewTabBlobs.clear();
 
-		if (previewUrl && previewUrl.startsWith('blob:')) {
-			URL.revokeObjectURL(previewUrl);
+	onDestroy(() => {
+		// 🔥 Revoke ALL blob URLs (originals + merged)
+		for (const url of activeBlobUrls) {
+			if (url.startsWith('blob:')) {
+				URL.revokeObjectURL(url);
+			}
 		}
+		activeBlobUrls.clear();
+
+		// 🔥 Evict both caches
+		mergedPdfUrlCache.evict();
+		fetchedPdfBlobCache.evict();
 	});
 </script>
 
@@ -497,7 +444,6 @@
 	</DialogContent>
 </Dialog>
 
-<!-- Main Content with TooltipProvider -->
 <TooltipProvider>
 	<div class="container mx-auto space-y-6 py-6">
 		<h1 class="text-3xl font-bold tracking-tight">PDF Processing Queue</h1>
@@ -538,7 +484,7 @@
 									size="sm"
 									disabled={mergingAllForUser[user] ||
 										items.filter((i) => !i.hidden && !i.isMerged).length === 0}
-									onclick={() => mergeAllForUser(user)}
+									onclick={() => mergeAllForUserBackend(user)}
 								>
 									{#if mergingAllForUser[user]}
 										<LoaderCircle class="mr-2 h-4 w-4 animate-spin" />
@@ -554,7 +500,7 @@
 									size="sm"
 									disabled={merging[user] ||
 										Object.values(selectedItems[user] || {}).filter(Boolean).length === 0}
-									onclick={() => mergePdfs(user)}
+									onclick={() => mergePdfsBackend(user)}
 								>
 									{#if merging[user]}
 										<LoaderCircle class="mr-2 h-4 w-4 animate-spin" />
