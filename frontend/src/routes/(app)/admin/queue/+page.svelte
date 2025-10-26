@@ -45,7 +45,7 @@
 	import { token } from '$lib/stores/token.svelte';
 
 	// ✅ Generic cache
-	import { createCache } from '$lib/utils/cache';
+	import { createCache } from '$lib/cache/createRefCountedCache';
 
 	interface QueueItem {
 		id: number;

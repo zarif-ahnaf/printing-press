@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     "apps.api",
     "apps.wallet",
     "apps.queue",
+    "apps.printers",
 ]
 
 CORS_ALLOW_ALL_ORIGINS = True  # CORS

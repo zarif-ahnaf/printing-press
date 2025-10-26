@@ -2,14 +2,12 @@ from decimal import Decimal
 
 from django.contrib.auth.models import User
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.db import transaction
 from django.shortcuts import get_object_or_404
 from ninja import File, Form, Router
 from ninja.errors import HttpError
 from ninja.files import UploadedFile
 
 from apps.queue.models import Queue
-from apps.wallet.models import Transaction, Wallet
 
 from ..auth import AuthBearer
 from ..decorators import login_required
@@ -48,7 +46,6 @@ def queue_files(
         target_user = current_user
 
     if not files:
-        # Note: This returns 200 with a message — acceptable if intentional
         return {"message": "No files provided"}
 
     total_pages = 0
@@ -77,48 +74,15 @@ def queue_files(
     if total_pages == 0:
         raise HttpError(400, "No valid pages found in uploaded files")
 
-    with transaction.atomic():
-        queue_items = []
-        transaction_records = []
-
-        wallet, _ = Wallet.objects.select_for_update().get_or_create(
-            user=target_user, defaults={"balance": Decimal("0.00")}
+    # Create queue items without wallet or transaction logic
+    queue_items = []
+    for filename, content, num_pages in file_data_list:
+        file_for_db = SimpleUploadedFile(
+            name=filename, content=content, content_type="application/pdf"
         )
-        # total_cost = COST_PER_PAGE * total_pages
-        # # Pre-check: can they afford it?
-        # if wallet.balance < total_cost:
-        #     raise HttpError(400, "Insufficient wallet balance")
+        queue_items.append(Queue(file=file_for_db, user=target_user))
 
-        # Now charge per file
-        for filename, content, num_pages in file_data_list:
-            file_cost = COST_PER_PAGE * num_pages
-            try:
-                wallet.charge(
-                    file_cost,
-                    description=f"Queue {filename} - {num_pages} page(s) - {file_cost} BDT",
-                )
-            except ValueError as e:
-                raise HttpError(400, str(e))
-
-            transaction_records.append(
-                Transaction(
-                    wallet=wallet,
-                    user=target_user,
-                    transaction_type="charge",
-                    amount=file_cost,
-                    description=f"Printed {filename} - {num_pages} pages - {file_cost} BDT",
-                )
-            )
-
-            file_for_db = SimpleUploadedFile(
-                name=filename, content=content, content_type="application/pdf"
-            )
-            queue_items.append(Queue(file=file_for_db, user=target_user))
-
-        Transaction.objects.bulk_create(transaction_records)
-
-        # Create queue items in all cases
-        created_items = Queue.objects.bulk_create(queue_items)
+    created_items = Queue.objects.bulk_create(queue_items)
 
     response = {
         "message": f"{len(created_items)} file(s) queued successfully",
