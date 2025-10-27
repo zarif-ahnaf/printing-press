@@ -14,6 +14,7 @@ from ..decorators import login_required
 from ..http import HttpRequest
 from ..schemas.queue import (
     ProcessStatusResponse,
+    QueueFileResponse,
     QueueFileUpload,
     QueueListResponse,
     QueueUploadResponse,
@@ -25,7 +26,7 @@ router = Router(tags=["Queue"])
 COST_PER_PAGE = Decimal("1.0")
 
 
-@router.post("", auth=AuthBearer(), response=QueueUploadResponse)
+@router.post("", auth=AuthBearer())
 def queue_files(
     request: HttpRequest,
     files: File[list[UploadedFile]],
@@ -84,19 +85,15 @@ def queue_files(
 
     created_items = Queue.objects.bulk_create(queue_items)
 
-    response = {
-        "message": f"{len(created_items)} file(s) queued successfully",
-        "total_pages": total_pages,
-        "queue_ids": [item.pk for item in created_items],
-        "total_charged_bdt": str(COST_PER_PAGE * total_pages),
-    }
-
-    return response
+    return QueueUploadResponse(
+        message=f"{len(created_items)} file(s) queued successfully",
+        total_pages=total_pages,
+        queue_ids=[item.pk for item in created_items],
+        total_charged_bdt=str(COST_PER_PAGE * total_pages),
+    )
 
 
-@router.get(
-    "", auth=AuthBearer(), response=QueueListResponse, summary="List queued files"
-)
+@router.get("", auth=AuthBearer(), summary="List queued files")
 @login_required
 def list_queue(
     request: HttpRequest,
@@ -109,18 +106,18 @@ def list_queue(
     queryset = Queue.objects.filter(user=current_user)
 
     items = [
-        {
-            "id": item.pk,
-            "file": request.build_absolute_uri(item.file.url),
-            "processed": item.processed,
-            "created_at": item.created_at.isoformat(),
-            "user": item.user.username,
-            "user_id": item.user.pk,
-        }
+        QueueFileResponse(
+            id=item.pk,
+            file=request.build_absolute_uri(item.file.url),
+            processed=item.processed,
+            created_at=item.created_at.isoformat(),
+            user=item.user.username,
+            user_id=item.user.pk,
+        )
         for item in queryset
     ]
 
-    return {"queue": items}
+    return QueueListResponse(queue=items)
 
 
 @router.post(
@@ -141,17 +138,15 @@ def mark_as_processed(
 
     queue_item.processed = True
     queue_item.save(update_fields=["processed", "updated_at"])
-
-    return {
-        "id": queue_item.pk,
-        "processed": True,
-        "message": "File marked as processed.",
-    }
+    return ProcessStatusResponse(
+        id=queue_item.pk,
+        processed=queue_item.processed,
+        message="File marked as processed.",
+    )
 
 
 @router.delete(
     "/{queue_id}/processed",
-    response=ProcessStatusResponse,
     auth=AuthBearer(),
     summary="Mark file as unprocessed",
 )
@@ -168,8 +163,8 @@ def mark_as_unprocessed(
     queue_item.processed = False
     queue_item.save(update_fields=["processed", "updated_at"])
 
-    return {
-        "id": queue_item.pk,
-        "processed": False,
-        "message": "File marked as unprocessed.",
-    }
+    return ProcessStatusResponse(
+        id=queue_item.pk,
+        processed=queue_item.processed,
+        message="File marked as unprocessed.",
+    )

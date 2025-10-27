@@ -19,7 +19,8 @@
 		DialogHeader,
 		DialogTitle,
 		DialogFooter,
-		DialogClose
+		DialogClose,
+		DialogTrigger
 	} from '$lib/components/ui/dialog';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import {
@@ -38,14 +39,16 @@
 		Eye,
 		X,
 		ExternalLink,
-		ChevronRight
+		ChevronRight,
+		CheckCircle,
+		CreditCard,
+		Repeat
 	} from 'lucide-svelte';
 
-	import { MERGE_ENDPOINT, QUEUE_URL } from '$lib/constants/backend';
+	import { QUEUE_URL } from '$lib/constants/backend';
 	import { token } from '$lib/stores/token.svelte';
-
-	// ✅ Generic cache
-	import { createCache } from '$lib/cache/createRefCountedCache';
+	import { createRefCountedCache } from '$lib/cache/createRefCountedCache';
+	import { cn } from '$lib/utils';
 
 	interface QueueItem {
 		id: number;
@@ -53,9 +56,11 @@
 		processed: boolean;
 		created_at: string;
 		user: string;
+		user_id: number;
 		isMerged?: boolean;
 		mergedFrom?: string[];
 		hidden?: boolean;
+		pageCount?: number;
 	}
 
 	let queue = $state<QueueItem[]>([]);
@@ -64,18 +69,20 @@
 	let error = $state<string | null>(null);
 	let merging = $state<Record<string, boolean>>({});
 	let mergingFiles = $state<Record<string, boolean>>({});
-	let printing = $state<Record<string, boolean>>({});
+	let printing = $state<Record<number, boolean>>({});
+	let charging = $state<Record<number, boolean>>({});
 	let previewUrl = $state<string | null>(null);
 	let previewLoading = $state(false);
 	let selectedItems = $state<Record<string, Record<string, boolean>>>({});
 	let mergingAllForUser = $state<Record<string, boolean>>({});
+	let confirmingSelected = $state<Record<string, boolean>>({});
+	let unprocessingItem = $state<Record<number, boolean>>({});
+	let fetchingPageCounts = $state<Record<number, boolean>>({});
 
-	// 🔥 Caches
-	const mergedPdfUrlCache = createCache<string>(); // key: file hash → blob URL
-	const fetchedPdfBlobCache = createCache<string>(); // key: original URL → blob URL
+	let itemPrintMode = $state<Record<number, 'duplex' | 'simplex'>>({});
 
-	// Track ALL blob URLs for cleanup (both caches)
-	const activeBlobUrls = new Set<string>();
+	const mergedPdfCache = createRefCountedCache<string>();
+	const fetchedPdfCache = createRefCountedCache<string>();
 
 	function hashFiles(files: string[]): string {
 		return files.slice().sort().join('|');
@@ -92,80 +99,202 @@
 		);
 	}
 
-	// 🔥 Fetch PDF and cache the blob URL
 	async function fetchAndCachePdf(url: string): Promise<string> {
-		if (url.startsWith('blob:')) {
-			return url;
+		if (url.startsWith('blob:')) return url;
+		if (!fetchedPdfCache.has(url)) {
+			const res = await fetch(url, {
+				headers: { Authorization: `Bearer ${token.value}` }
+			});
+			if (!res.ok) throw new Error(`Failed to fetch PDF: ${url}`);
+			const blob = await res.blob();
+			const blobUrl = URL.createObjectURL(blob);
+			fetchedPdfCache.set(url, blobUrl);
 		}
-
-		const cached = fetchedPdfBlobCache.get(url);
-		if (cached) return cached;
-
-		const res = await fetch(url, {
-			headers: { Authorization: `Bearer ${token.value}` }
-		});
-		if (!res.ok) throw new Error(`Failed to fetch PDF: ${url}`);
-		const blob = await res.blob();
-		const blobUrl = URL.createObjectURL(blob);
-		fetchedPdfBlobCache.set(url, blobUrl);
-		activeBlobUrls.add(blobUrl);
-		return blobUrl;
+		fetchedPdfCache.incrementRef(url);
+		return fetchedPdfCache.get(url)!;
 	}
+
+	function releasePdfBlob(url: string): void {
+		if (!url.startsWith('blob:')) return;
+
+		for (const [key, blobUrl] of mergedPdfCache.entries()) {
+			if (blobUrl === url) {
+				if (mergedPdfCache.decrementRef(key)) URL.revokeObjectURL(url);
+				return;
+			}
+		}
+		for (const [key, blobUrl] of fetchedPdfCache.entries()) {
+			if (blobUrl === url) {
+				if (fetchedPdfCache.decrementRef(key)) URL.revokeObjectURL(url);
+				return;
+			}
+		}
+	}
+
+	async function fetchPageCount(item: QueueItem): Promise<number> {
+		if (item.pageCount !== undefined) return item.pageCount;
+		if (fetchingPageCounts[item.id]) return 1;
+
+		fetchingPageCounts = { ...fetchingPageCounts, [item.id]: true };
+		try {
+			const res = await fetch('http://127.0.0.1:8000/api/pdf/count', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${token.value}`
+				},
+				body: JSON.stringify({ url: item.file })
+			});
+			if (!res.ok) throw new Error(`Page count failed for ${item.file}`);
+			const data = await res.json();
+			const count = data.page_count || 1;
+
+			const userQueue = groupedQueue[item.user] || [];
+			const idx = userQueue.findIndex((i) => i.id === item.id);
+			if (idx !== -1) {
+				userQueue[idx] = { ...userQueue[idx], pageCount: count };
+				groupedQueue = { ...groupedQueue, [item.user]: userQueue };
+			}
+			return count;
+		} catch (err) {
+			console.warn('Page count error:', err);
+			return 1;
+		} finally {
+			fetchingPageCounts = { ...fetchingPageCounts, [item.id]: false };
+		}
+	}
+
+	async function chargeForPdf(item: QueueItem): Promise<boolean> {
+		if (!item.pageCount) return false;
+		const mode = itemPrintMode[item.id] || 'duplex';
+		if (mode !== 'simplex') return true; // no charge needed
+
+		const sheets = item.pageCount % 2 === 0 ? item.pageCount : item.pageCount + 1;
+		if (sheets <= 0) return true;
+
+		charging = { ...charging, [item.id]: true };
+		try {
+			const res = await fetch('http://127.0.0.1:8000/api/charge', {
+				method: 'POST',
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${token.value}`
+				},
+				body: JSON.stringify({
+					user_id: item.user_id,
+					amount: sheets,
+					description: `Simplex printing: ${item.file.split('/').pop()} (${item.pageCount} pages → ${sheets} sheets)`
+				})
+			});
+			if (!res.ok) {
+				const err = await res.json();
+				throw new Error(err.detail || 'Charge failed');
+			}
+			return true;
+		} catch (err) {
+			error =
+				err instanceof Error ? `Charge failed for ${item.file}: ${err.message}` : 'Charge error';
+			return false;
+		} finally {
+			charging = { ...charging, [item.id]: false };
+		}
+	}
+
+	async function printPdf(item: QueueItem) {
+		const { id, file } = item;
+		printing = { ...printing, [id]: true };
+
+		try {
+			const charged = await chargeForPdf(item);
+			if (!charged) return;
+
+			const pdfBlobUrl = await fetchAndCachePdf(file);
+			const iframe = document.createElement('iframe');
+			iframe.style.position = 'absolute';
+			iframe.style.left = '-9999px';
+			iframe.style.top = '-9999px';
+			iframe.style.width = '0';
+			iframe.style.height = '0';
+			iframe.setAttribute('aria-hidden', 'true');
+			iframe.src = pdfBlobUrl;
+
+			await new Promise<void>((resolve, reject) => {
+				iframe.onload = () => resolve();
+				iframe.onerror = () => reject(new Error('PDF load failed'));
+				document.body.appendChild(iframe);
+			});
+
+			iframe.contentWindow?.print();
+
+			setTimeout(() => {
+				if (document.body.contains(iframe)) document.body.removeChild(iframe);
+			}, 10000);
+		} catch (err) {
+			error = err instanceof Error ? `Print error: ${err.message}` : 'Print failed';
+		} finally {
+			printing = { ...printing, [id]: false };
+		}
+	}
+
+	// --- Rest of logic (merge, confirm, etc.) unchanged below ---
 
 	async function mergePdfsBackend(user: string) {
 		const files = Object.entries(selectedItems[user] || {})
 			.filter(([, checked]) => checked)
 			.map(([file]) => file);
-
 		if (files.length === 0) return;
 
 		const cacheKey = hashFiles(files);
-		const cachedUrl = mergedPdfUrlCache.get(cacheKey);
-		if (cachedUrl) {
-			insertMergedItem(user, files, cachedUrl);
-			selectedItems = { ...selectedItems, [user]: {} };
-			return;
-		}
+		let blobUrl: string;
 
-		const userItems = groupedQueue[user] || [];
-		merging = { ...merging, [user]: true };
-		mergingFiles = { ...mergingFiles };
-		for (const f of files) mergingFiles[f] = true;
-
-		try {
-			const formData = new FormData();
-			for (const url of files) {
-				const blobUrl = await fetchAndCachePdf(url);
-				const res = await fetch(blobUrl);
-				const blob = await res.blob();
-				formData.append('files', blob, url.split('/').pop() || 'file.pdf');
-			}
-
-			const mergeRes = await fetch(MERGE_ENDPOINT, {
-				method: 'POST',
-				body: formData,
-				headers: { Authorization: `Bearer ${token.value}` }
-			});
-
-			if (!mergeRes.ok) {
-				const text = await mergeRes.text();
-				throw new Error(`Merge failed: ${text}`);
-			}
-
-			const mergedBlob = await mergeRes.blob();
-			const url = URL.createObjectURL(mergedBlob);
-			mergedPdfUrlCache.set(cacheKey, url);
-			activeBlobUrls.add(url);
-
-			insertMergedItem(user, files, url);
-			selectedItems = { ...selectedItems, [user]: {} };
-		} catch (err) {
-			error = err instanceof Error ? `Merge error: ${err.message}` : 'Merge failed';
-		} finally {
-			merging = { ...merging, [user]: false };
+		if (mergedPdfCache.has(cacheKey)) {
+			mergedPdfCache.incrementRef(cacheKey);
+			blobUrl = mergedPdfCache.get(cacheKey)!;
+		} else {
+			const userItems = groupedQueue[user] || [];
+			merging = { ...merging, [user]: true };
 			mergingFiles = { ...mergingFiles };
-			for (const f of files) delete mergingFiles[f];
+			for (const f of files) mergingFiles[f] = true;
+
+			try {
+				const formData = new FormData();
+				const blobUrlsToRelease: string[] = [];
+				for (const url of files) {
+					const bUrl = await fetchAndCachePdf(url);
+					blobUrlsToRelease.push(bUrl);
+					const res = await fetch(bUrl);
+					const blob = await res.blob();
+					formData.append('files', blob, url.split('/').pop() || 'file.pdf');
+				}
+
+				const mergeRes = await fetch('http://127.0.0.1:8000/api/convert/merge/', {
+					method: 'POST',
+					body: formData,
+					headers: { Authorization: `Bearer ${token.value}` }
+				});
+
+				if (!mergeRes.ok) {
+					const text = await mergeRes.text();
+					throw new Error(`Merge failed: ${text}`);
+				}
+
+				const mergedBlob = await mergeRes.blob();
+				blobUrl = URL.createObjectURL(mergedBlob);
+				mergedPdfCache.set(cacheKey, blobUrl);
+				mergedPdfCache.incrementRef(cacheKey);
+				blobUrlsToRelease.forEach(releasePdfBlob);
+			} catch (err) {
+				error = err instanceof Error ? `Merge error: ${err.message}` : 'Merge failed';
+				return;
+			} finally {
+				merging = { ...merging, [user]: false };
+				mergingFiles = { ...mergingFiles };
+				for (const f of files) delete mergingFiles[f];
+			}
 		}
+
+		insertMergedItem(user, files, blobUrl);
+		selectedItems = { ...selectedItems, [user]: {} };
 	}
 
 	async function mergeAllForUserBackend(user: string) {
@@ -173,64 +302,65 @@
 		const filesToMerge = userItems
 			.filter((item) => !item.hidden && !item.isMerged)
 			.map((item) => item.file);
-
 		if (filesToMerge.length === 0) return;
 
 		const cacheKey = hashFiles(filesToMerge);
-		const cachedUrl = mergedPdfUrlCache.get(cacheKey);
-		if (cachedUrl) {
-			insertMergedItem(user, filesToMerge, cachedUrl);
-			selectedItems = { ...selectedItems, [user]: {} };
-			return;
-		}
+		let blobUrl: string;
 
-		mergingAllForUser = { ...mergingAllForUser, [user]: true };
-		mergingFiles = { ...mergingFiles };
-		for (const f of filesToMerge) mergingFiles[f] = true;
-
-		try {
-			const formData = new FormData();
-			for (const url of filesToMerge) {
-				const blobUrl = await fetchAndCachePdf(url);
-				const res = await fetch(blobUrl);
-				const blob = await res.blob();
-				formData.append('files', blob, url.split('/').pop() || 'file.pdf');
-			}
-
-			const mergeRes = await fetch('http://127.0.0.1:8000/api/convert/merge/', {
-				method: 'POST',
-				body: formData,
-				headers: { Authorization: `Bearer ${token.value}` }
-			});
-
-			if (!mergeRes.ok) {
-				const text = await mergeRes.text();
-				throw new Error(`Merge failed: ${text}`);
-			}
-
-			const mergedBlob = await mergeRes.blob();
-			const url = URL.createObjectURL(mergedBlob);
-			mergedPdfUrlCache.set(cacheKey, url);
-			activeBlobUrls.add(url);
-
-			insertMergedItem(user, filesToMerge, url);
-			selectedItems = { ...selectedItems, [user]: {} };
-		} catch (err) {
-			error = err instanceof Error ? `Merge error: ${err.message}` : 'Merge failed';
-		} finally {
-			mergingAllForUser = { ...mergingAllForUser, [user]: false };
+		if (mergedPdfCache.has(cacheKey)) {
+			mergedPdfCache.incrementRef(cacheKey);
+			blobUrl = mergedPdfCache.get(cacheKey)!;
+		} else {
+			mergingAllForUser = { ...mergingAllForUser, [user]: true };
 			mergingFiles = { ...mergingFiles };
-			for (const f of filesToMerge) delete mergingFiles[f];
+			for (const f of filesToMerge) mergingFiles[f] = true;
+
+			try {
+				const formData = new FormData();
+				const blobUrlsToRelease: string[] = [];
+				for (const url of filesToMerge) {
+					const bUrl = await fetchAndCachePdf(url);
+					blobUrlsToRelease.push(bUrl);
+					const res = await fetch(bUrl);
+					const blob = await res.blob();
+					formData.append('files', blob, url.split('/').pop() || 'file.pdf');
+				}
+
+				const mergeRes = await fetch('http://127.0.0.1:8000/api/convert/merge/', {
+					method: 'POST',
+					body: formData,
+					headers: { Authorization: `Bearer ${token.value}` }
+				});
+
+				if (!mergeRes.ok) {
+					const text = await mergeRes.text();
+					throw new Error(`Merge failed: ${text}`);
+				}
+
+				const mergedBlob = await mergeRes.blob();
+				blobUrl = URL.createObjectURL(mergedBlob);
+				mergedPdfCache.set(cacheKey, blobUrl);
+				mergedPdfCache.incrementRef(cacheKey);
+				blobUrlsToRelease.forEach(releasePdfBlob);
+			} catch (err) {
+				error = err instanceof Error ? `Merge error: ${err.message}` : 'Merge failed';
+				return;
+			} finally {
+				mergingAllForUser = { ...mergingAllForUser, [user]: false };
+				mergingFiles = { ...mergingFiles };
+				for (const f of filesToMerge) delete mergingFiles[f];
+			}
 		}
+
+		insertMergedItem(user, filesToMerge, blobUrl);
+		selectedItems = { ...selectedItems, [user]: {} };
 	}
 
 	function insertMergedItem(user: string, files: string[], url: string) {
 		const userItems = groupedQueue[user] || [];
 		const selectedIndices: number[] = [];
 		for (const [idx, item] of userItems.entries()) {
-			if (files.includes(item.file)) {
-				selectedIndices.push(idx);
-			}
+			if (files.includes(item.file)) selectedIndices.push(idx);
 		}
 		const maxIndex =
 			selectedIndices.length > 0 ? Math.max(...selectedIndices) : userItems.length - 1;
@@ -242,9 +372,14 @@
 			processed: true,
 			created_at: new Date().toISOString(),
 			user,
+			user_id: userItems[0]?.user_id ?? -1,
 			isMerged: true,
 			mergedFrom: files,
-			hidden: false
+			hidden: false,
+			pageCount: files.reduce((sum, f) => {
+				const orig = queue.find((q) => q.file === f && q.user === user);
+				return sum + (orig?.pageCount || 1);
+			}, 0)
 		};
 
 		const updatedItems = userItems.map((item) =>
@@ -252,7 +387,6 @@
 		);
 		const finalItems = [...updatedItems];
 		finalItems.splice(insertIndex, 0, mergedItem);
-
 		groupedQueue = { ...groupedQueue, [user]: finalItems };
 	}
 
@@ -269,11 +403,16 @@
 				queue = data.queue || [];
 				groupedQueue = groupByUser(queue);
 				selectedItems = {};
+				itemPrintMode = {};
+				for (const item of queue) {
+					itemPrintMode[item.id] = 'duplex';
+					if (item.pageCount === undefined) fetchPageCount(item);
+				}
 				for (const user of Object.keys(groupedQueue)) {
 					selectedItems[user] = {};
 				}
 			} catch (err) {
-				error = err instanceof Error ? err.message : 'An unknown error occurred';
+				error = err instanceof Error ? err.message : 'Unknown error';
 			} finally {
 				loading = false;
 			}
@@ -285,26 +424,19 @@
 		if (mergingFiles[file]) return;
 		selectedItems = {
 			...selectedItems,
-			[user]: {
-				...selectedItems[user],
-				[file]: checked
-			}
+			[user]: { ...selectedItems[user], [file]: checked }
 		};
 	}
 
-	// 🔥 FIXED: No cache eviction or blob revocation on unmerge
 	function unmerge(user: string, fileUrl: string) {
 		const userItems = groupedQueue[user] || [];
 		const mergedIndex = userItems.findIndex((item) => item.file === fileUrl && item.isMerged);
 		if (mergedIndex === -1) return;
 
 		const mergedItem = userItems[mergedIndex];
-		if (!mergedItem.mergedFrom) {
-			console.warn('Merged item missing mergedFrom:', mergedItem);
-			return;
-		}
+		if (!mergedItem.mergedFrom) return;
 
-		// DO NOT revoke blob or delete from cache — merged result is still valid
+		releasePdfBlob(fileUrl);
 
 		const withoutMerged = [...userItems];
 		withoutMerged.splice(mergedIndex, 1);
@@ -319,6 +451,7 @@
 						processed: false,
 						created_at: new Date().toISOString(),
 						user,
+						user_id: mergedItem.user_id,
 						hidden: false
 					};
 		});
@@ -329,52 +462,13 @@
 		selectedItems = { ...selectedItems, [user]: {} };
 	}
 
-	async function printPdf(url: string) {
-		printing = { ...printing, [url]: true };
-		let iframe: HTMLIFrameElement | null = null;
-
-		try {
-			const pdfBlobUrl = await fetchAndCachePdf(url);
-
-			iframe = document.createElement('iframe');
-			iframe.style.position = 'absolute';
-			iframe.style.left = '-9999px';
-			iframe.style.top = '-9999px';
-			iframe.style.width = '0';
-			iframe.style.height = '0';
-			iframe.setAttribute('aria-hidden', 'true');
-			iframe.src = pdfBlobUrl;
-
-			await new Promise<void>((resolve, reject) => {
-				iframe!.onload = () => resolve();
-				iframe!.onerror = () => reject(new Error('Failed to load PDF in iframe'));
-				document.body.appendChild(iframe!);
-			});
-
-			iframe.contentWindow?.print();
-
-			setTimeout(() => {
-				if (iframe && document.body.contains(iframe)) {
-					document.body.removeChild(iframe);
-				}
-			}, 10000);
-		} catch (err) {
-			error = err instanceof Error ? `Print error: ${err.message}` : 'Print failed';
-			if (iframe && document.body.contains(iframe)) {
-				document.body.removeChild(iframe);
-			}
-		} finally {
-			printing = { ...printing, [url]: false };
-		}
-	}
-
 	async function openPreview(url: string) {
 		previewLoading = true;
 		previewUrl = null;
 		try {
 			previewUrl = await fetchAndCachePdf(url);
 		} catch (err) {
-			error = err instanceof Error ? `Preview error: ${err.message}` : 'Failed to load PDF preview';
+			error = err instanceof Error ? `Preview error: ${err.message}` : 'Failed to load preview';
 			previewUrl = null;
 		} finally {
 			previewLoading = false;
@@ -389,30 +483,119 @@
 		try {
 			const finalUrl = await fetchAndCachePdf(url);
 			const win = window.open(finalUrl, '_blank');
-			if (!win) {
-				error = 'Popup blocked. Please allow popups.';
-			}
+			if (!win) error = 'Popup blocked';
 		} catch (err) {
-			error = err instanceof Error ? `New tab error: ${err.message}` : 'Failed to open in new tab';
+			error = err instanceof Error ? `New tab error: ${err.message}` : 'Open failed';
 		}
 	}
 
-	onDestroy(() => {
-		// 🔥 Revoke ALL blob URLs (originals + merged)
-		for (const url of activeBlobUrls) {
-			if (url.startsWith('blob:')) {
-				URL.revokeObjectURL(url);
-			}
-		}
-		activeBlobUrls.clear();
+	async function confirmSelectedItems(user: string) {
+		const userItems = groupedQueue[user] || [];
+		const selectedItemsForUser = selectedItems[user] || {};
+		const itemsToConfirm = userItems.filter(
+			(item) => !item.hidden && !item.processed && !item.isMerged && selectedItemsForUser[item.file]
+		);
+		if (itemsToConfirm.length === 0) return;
 
-		// 🔥 Evict both caches
-		mergedPdfUrlCache.evict();
-		fetchedPdfBlobCache.evict();
+		confirmingSelected = { ...confirmingSelected, [user]: true };
+		try {
+			for (const item of itemsToConfirm) {
+				const res = await fetch(`http://127.0.0.1:8000/api/queue/${item.id}/processed`, {
+					method: 'POST',
+					headers: { Authorization: `Bearer ${token.value}`, 'Content-Type': 'application/json' }
+				});
+				if (!res.ok) {
+					const err = await res.json();
+					throw new Error(err.detail || `Confirm failed for ${item.id}`);
+				}
+				const result = await res.json();
+				if (result.processed) {
+					const userQueue = groupedQueue[user] || [];
+					const idx = userQueue.findIndex((i) => i.id === item.id);
+					if (idx !== -1) userQueue[idx] = { ...userQueue[idx], processed: true };
+					groupedQueue = { ...groupedQueue, [user]: userQueue };
+				}
+			}
+			selectedItems = { ...selectedItems, [user]: {} };
+		} catch (err) {
+			error = err instanceof Error ? `Confirm error: ${err.message}` : 'Confirm failed';
+		} finally {
+			confirmingSelected = { ...confirmingSelected, [user]: false };
+		}
+	}
+
+	async function unprocessItem(item: QueueItem) {
+		if (!item.processed || item.isMerged || item.hidden) return;
+		const { id, user } = item;
+		unprocessingItem = { ...unprocessingItem, [id]: true };
+		try {
+			const res = await fetch(`http://127.0.0.1:8000/api/queue/${id}/processed`, {
+				method: 'DELETE',
+				headers: { Authorization: `Bearer ${token.value}`, 'Content-Type': 'application/json' }
+			});
+			if (!res.ok) {
+				const err = await res.json();
+				throw new Error(err.detail || `Unprocess failed for ${id}`);
+			}
+			const userQueue = groupedQueue[user] || [];
+			const idx = userQueue.findIndex((i) => i.id === id);
+			if (idx !== -1) userQueue[idx] = { ...userQueue[idx], processed: false };
+			groupedQueue = { ...groupedQueue, [user]: userQueue };
+		} catch (err) {
+			error = err instanceof Error ? `Unprocess error: ${err.message}` : 'Unprocess failed';
+		} finally {
+			unprocessingItem = { ...unprocessingItem, [id]: false };
+		}
+	}
+
+	async function confirmItem(item: QueueItem) {
+		if (item.processed || item.isMerged || item.hidden) return;
+		const { id, user } = item;
+		unprocessingItem = { ...unprocessingItem, [id]: true };
+		try {
+			const res = await fetch(`http://127.0.0.1:8000/api/queue/${id}/processed`, {
+				method: 'POST',
+				headers: { Authorization: `Bearer ${token.value}`, 'Content-Type': 'application/json' }
+			});
+			if (!res.ok) {
+				const err = await res.json();
+				throw new Error(err.detail || `Confirm failed for ${id}`);
+			}
+			const result = await res.json();
+			if (result.processed) {
+				const userQueue = groupedQueue[user] || [];
+				const idx = userQueue.findIndex((i) => i.id === id);
+				if (idx !== -1) userQueue[idx] = { ...userQueue[idx], processed: true };
+				groupedQueue = { ...groupedQueue, [user]: userQueue };
+			}
+		} catch (err) {
+			error = err instanceof Error ? `Confirm error: ${err.message}` : 'Confirm failed';
+		} finally {
+			unprocessingItem = { ...unprocessingItem, [id]: false };
+		}
+	}
+
+	function canClearQueue(user: string): boolean {
+		const items = groupedQueue[user] || [];
+		return items.every((item) => item.processed || item.hidden);
+	}
+
+	function clearUserQueue(user: string) {
+		const { [user]: _, ...rest } = groupedQueue;
+		groupedQueue = rest;
+		const { [user]: __, ...restSel } = selectedItems;
+		selectedItems = restSel;
+	}
+
+	onDestroy(() => {
+		for (const [key, url] of mergedPdfCache.entries()) URL.revokeObjectURL(url as string);
+		for (const [key, url] of fetchedPdfCache.entries()) URL.revokeObjectURL(url as string);
+		mergedPdfCache.evictAll();
+		fetchedPdfCache.evictAll();
 	});
 </script>
 
-<!-- Dialog for PDF Preview -->
+<!-- Preview Dialog -->
 <Dialog open={!!previewUrl} onOpenChange={(open) => !open && closePreview()}>
 	<DialogContent class="flex max-h-[90vh] max-w-4xl flex-col p-0">
 		<DialogHeader class="border-b px-6 py-4">
@@ -424,22 +607,15 @@
 					<LoaderCircle class="h-8 w-8 animate-spin text-primary" />
 				</div>
 			{:else if previewUrl}
-				<embed
-					src={previewUrl}
-					type="application/pdf"
-					class="h-full min-h-[500px] w-full"
-					aria-label="PDF preview"
-				/>
+				<embed src={previewUrl} type="application/pdf" class="h-full min-h-[500px] w-full" />
 			{:else}
 				<div class="flex h-full items-center justify-center text-destructive">
-					Failed to load PDF preview
+					Failed to load preview
 				</div>
 			{/if}
 		</div>
 		<DialogFooter class="border-t bg-background px-6 py-4">
-			<DialogClose>
-				<Button variant="outline">Close</Button>
-			</DialogClose>
+			<DialogClose><Button variant="outline">Close</Button></DialogClose>
 		</DialogFooter>
 	</DialogContent>
 </Dialog>
@@ -449,9 +625,7 @@
 		<h1 class="text-3xl font-bold tracking-tight">PDF Processing Queue</h1>
 
 		{#if error}
-			<Alert variant="destructive">
-				<AlertDescription>{error}</AlertDescription>
-			</Alert>
+			<Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>
 		{/if}
 
 		{#if loading}
@@ -462,7 +636,6 @@
 			<div class="py-12 text-center">
 				<FileText class="mx-auto h-12 w-12 text-muted-foreground" />
 				<h3 class="mt-2 text-lg font-medium">No items in queue</h3>
-				<p class="mt-1 text-muted-foreground">All PDFs have been processed</p>
 			</div>
 		{:else}
 			<div class="space-y-8">
@@ -471,12 +644,6 @@
 						<div class="flex flex-wrap items-center justify-between gap-4 bg-muted/50 px-6 py-4">
 							<div>
 								<h2 class="text-xl font-semibold">{user}</h2>
-								<p class="text-sm text-muted-foreground">
-									{items.filter((i) => !i.hidden).length} pending PDF{items.filter((i) => !i.hidden)
-										.length !== 1
-										? 's'
-										: ''}
-								</p>
 							</div>
 							<div class="flex flex-wrap gap-2">
 								<Button
@@ -487,11 +654,9 @@
 									onclick={() => mergeAllForUserBackend(user)}
 								>
 									{#if mergingAllForUser[user]}
-										<LoaderCircle class="mr-2 h-4 w-4 animate-spin" />
-										Merging All...
+										<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Merging All...
 									{:else}
-										<Merge class="mr-2 h-4 w-4" />
-										Merge All
+										<Merge class="mr-2 h-4 w-4" /> Merge All
 									{/if}
 								</Button>
 
@@ -503,13 +668,31 @@
 									onclick={() => mergePdfsBackend(user)}
 								>
 									{#if merging[user]}
-										<LoaderCircle class="mr-2 h-4 w-4 animate-spin" />
-										Merging...
+										<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Merging...
 									{:else}
-										<Merge class="mr-2 h-4 w-4" />
-										Merge Selected
+										<Merge class="mr-2 h-4 w-4" /> Merge Selected
 									{/if}
 								</Button>
+
+								<Button
+									variant="outline"
+									size="sm"
+									disabled={confirmingSelected[user] ||
+										Object.values(selectedItems[user] || {}).filter(Boolean).length === 0}
+									onclick={() => confirmSelectedItems(user)}
+								>
+									{#if confirmingSelected[user]}
+										<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Confirming...
+									{:else}
+										<CheckCircle class="mr-2 h-4 w-4" /> Confirm Selected
+									{/if}
+								</Button>
+
+								{#if canClearQueue(user)}
+									<Button variant="destructive" size="sm" onclick={() => clearUserQueue(user)}>
+										Clear Queue
+									</Button>
+								{/if}
 							</div>
 						</div>
 
@@ -520,6 +703,7 @@
 									<TableHead>File</TableHead>
 									<TableHead>Status</TableHead>
 									<TableHead>Created</TableHead>
+									<TableHead>Print Mode</TableHead>
 									<TableHead class="text-right">Actions</TableHead>
 								</TableRow>
 							</TableHeader>
@@ -527,23 +711,19 @@
 								{#each items as item}
 									{#if !item.hidden}
 										<TableRow
-											class="transition-opacity duration-200 ease-in-out {mergingFiles[item.file]
-												? 'pointer-events-none opacity-50'
-												: ''}"
+											class={cn(
+												'transition-opacity duration-200 ease-in-out',
+												mergingFiles[item.file] && 'pointer-events-none opacity-50'
+											)}
 										>
 											<TableCell>
 												{#if !item.isMerged}
-													<Tooltip>
-														<TooltipTrigger>
-															<Checkbox
-																checked={!!selectedItems[user]?.[item.file]}
-																onCheckedChange={(checked) =>
-																	toggleSelect(user, item.file, checked)}
-																disabled={mergingFiles[item.file]}
-															/>
-														</TooltipTrigger>
-														<TooltipContent>Select PDF to merge</TooltipContent>
-													</Tooltip>
+													<Checkbox
+														checked={!!selectedItems[item.user]?.[item.file]}
+														onCheckedChange={(checked) =>
+															toggleSelect(item.user, item.file, checked)}
+														disabled={mergingFiles[item.file]}
+													/>
 												{:else}
 													<div
 														class="flex h-4 w-4 items-center justify-center text-muted-foreground"
@@ -563,36 +743,66 @@
 												{:else}
 													{item.file.split('/').pop()}
 												{/if}
-											</TableCell>
-											<TableCell>
-												{#if item.isMerged}
-													<Tooltip>
-														<TooltipTrigger>
-															<span><Badge variant="default">Merged</Badge></span>
-														</TooltipTrigger>
-														<TooltipContent
-															>This PDF was created by merging multiple files</TooltipContent
-														>
-													</Tooltip>
-												{:else if item.processed}
-													<Tooltip>
-														<TooltipTrigger>
-															<span><Badge variant="secondary">Processed</Badge></span>
-														</TooltipTrigger>
-														<TooltipContent>PDF has been processed and is ready</TooltipContent>
-													</Tooltip>
-												{:else}
-													<Tooltip>
-														<TooltipTrigger>
-															<span><Badge variant="destructive">Pending</Badge></span>
-														</TooltipTrigger>
-														<TooltipContent>PDF is waiting to be processed</TooltipContent>
-													</Tooltip>
+												{#if item.pageCount !== undefined}
+													<span class="ml-2 text-xs text-muted-foreground"
+														>({item.pageCount} pg)</span
+													>
 												{/if}
 											</TableCell>
 											<TableCell>
-												{new Date(item.created_at).toLocaleString()}
+												{#if item.isMerged}
+													<Badge variant="default">Merged</Badge>
+												{:else if item.processed}
+													<Badge variant="secondary">Processed</Badge>
+												{:else}
+													<Badge variant="destructive">Pending</Badge>
+												{/if}
 											</TableCell>
+											<TableCell>{new Date(item.created_at).toLocaleString()}</TableCell>
+
+											<TableCell>
+												{#if !item.isMerged}
+													<div class="flex items-center gap-2">
+														<Tooltip>
+															<TooltipTrigger>
+																<Button
+																	variant={itemPrintMode[item.id] === 'duplex'
+																		? 'default'
+																		: 'outline'}
+																	size="sm"
+																	class="h-8 w-8 p-0"
+																	onclick={() =>
+																		(itemPrintMode = { ...itemPrintMode, [item.id]: 'duplex' })}
+																>
+																	<Repeat class="h-4 w-4" />
+																</Button>
+															</TooltipTrigger>
+															<TooltipContent>Duplex (free)</TooltipContent>
+														</Tooltip>
+														<Tooltip>
+															<TooltipTrigger>
+																<Button
+																	variant={itemPrintMode[item.id] === 'simplex'
+																		? 'default'
+																		: 'outline'}
+																	size="sm"
+																	class="h-8 w-8 p-0"
+																	onclick={() =>
+																		(itemPrintMode = { ...itemPrintMode, [item.id]: 'simplex' })}
+																>
+																	<FileText class="h-4 w-4" />
+																</Button>
+															</TooltipTrigger>
+															<TooltipContent>Simplex (1 taka per sheet)</TooltipContent>
+														</Tooltip>
+													</div>
+												{:else}
+													<span class="text-sm text-muted-foreground">
+														{itemPrintMode[item.id] === 'simplex' ? 'Simplex' : 'Duplex'}
+													</span>
+												{/if}
+											</TableCell>
+
 											<TableCell class="text-right">
 												<div class="flex justify-end gap-2">
 													<div class="flex rounded-md border border-input shadow-sm">
@@ -604,12 +814,11 @@
 																	class="rounded-r-none border-r"
 																	onclick={() => openPreview(item.file)}
 																	disabled={mergingFiles[item.file]}
-																	aria-label="Preview PDF"
 																>
 																	<Eye class="h-4 w-4" />
 																</Button>
 															</TooltipTrigger>
-															<TooltipContent>Preview PDF</TooltipContent>
+															<TooltipContent>Preview</TooltipContent>
 														</Tooltip>
 														<Tooltip>
 															<TooltipTrigger>
@@ -619,37 +828,80 @@
 																	class="rounded-l-none"
 																	onclick={() => openInNewTab(item.file)}
 																	disabled={mergingFiles[item.file]}
-																	aria-label="Open in new tab"
 																>
 																	<ExternalLink class="h-4 w-4" />
 																</Button>
 															</TooltipTrigger>
-															<TooltipContent>
-																{item.isMerged
-																	? 'Open merged PDF in new tab'
-																	: 'Open in new browser tab'}
-															</TooltipContent>
+															<TooltipContent>Open in new tab</TooltipContent>
 														</Tooltip>
 													</div>
 
 													<Tooltip>
 														<TooltipTrigger>
 															<Button
-																variant="outline"
+																variant="default"
 																size="sm"
-																disabled={printing[item.file] || mergingFiles[item.file]}
-																onclick={() => printPdf(item.file)}
-																aria-label="Print PDF"
+																disabled={printing[item.id] ||
+																	charging[item.id] ||
+																	mergingFiles[item.file]}
+																onclick={() => printPdf(item)}
 															>
-																{#if printing[item.file]}
-																	<LoaderCircle class="h-4 w-4 animate-spin" />
+																{#if charging[item.id]}
+																	<CreditCard class="mr-1 h-3 w-3 animate-pulse" />
+																	Charging...
+																{:else if printing[item.id]}
+																	<LoaderCircle class="mr-1 h-3 w-3 animate-spin" />
+																	Printing...
 																{:else}
 																	<Printer class="h-4 w-4" />
+																	Print
 																{/if}
 															</Button>
 														</TooltipTrigger>
-														<TooltipContent>Print PDF</TooltipContent>
+														<TooltipContent>
+															{itemPrintMode[item.id] === 'simplex'
+																? 'Print Simplex (will charge)'
+																: 'Print Duplex (free)'}
+														</TooltipContent>
 													</Tooltip>
+
+													{#if item.processed && !item.isMerged}
+														<Tooltip>
+															<TooltipTrigger>
+																<Button
+																	variant="outline"
+																	size="sm"
+																	disabled={unprocessingItem[item.id]}
+																	onclick={() => unprocessItem(item)}
+																>
+																	{#if unprocessingItem[item.id]}
+																		<LoaderCircle class="h-4 w-4 animate-spin" />
+																	{:else}
+																		<X class="h-4 w-4" />
+																	{/if}
+																</Button>
+															</TooltipTrigger>
+															<TooltipContent>Unprocess</TooltipContent>
+														</Tooltip>
+													{:else if !item.processed && !item.isMerged}
+														<Tooltip>
+															<TooltipTrigger>
+																<Button
+																	variant="outline"
+																	size="sm"
+																	disabled={unprocessingItem[item.id]}
+																	onclick={() => confirmItem(item)}
+																>
+																	{#if unprocessingItem[item.id]}
+																		<LoaderCircle class="h-4 w-4 animate-spin" />
+																	{:else}
+																		<CheckCircle class="h-4 w-4" />
+																	{/if}
+																</Button>
+															</TooltipTrigger>
+															<TooltipContent>Confirm</TooltipContent>
+														</Tooltip>
+													{/if}
 
 													{#if item.isMerged}
 														<Tooltip>
@@ -657,13 +909,12 @@
 																<Button
 																	variant="destructive"
 																	size="icon"
-																	onclick={() => unmerge(user, item.file)}
-																	aria-label="Unmerge PDF"
+																	onclick={() => unmerge(item.user, item.file)}
 																>
 																	<X class="h-4 w-4" />
 																</Button>
 															</TooltipTrigger>
-															<TooltipContent>Unmerge: restore original PDFs</TooltipContent>
+															<TooltipContent>Unmerge</TooltipContent>
 														</Tooltip>
 													{/if}
 												</div>
