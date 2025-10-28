@@ -19,8 +19,7 @@
 		DialogHeader,
 		DialogTitle,
 		DialogFooter,
-		DialogClose,
-		DialogTrigger
+		DialogClose
 	} from '$lib/components/ui/dialog';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import {
@@ -40,6 +39,7 @@
 		X,
 		ExternalLink,
 		ChevronRight,
+		ChevronDown,
 		CheckCircle,
 		CreditCard,
 		Repeat
@@ -61,6 +61,7 @@
 		mergedFrom?: string[];
 		hidden?: boolean;
 		pageCount?: number;
+		mergedId?: string;
 	}
 
 	let queue = $state<QueueItem[]>([]);
@@ -78,7 +79,7 @@
 	let confirmingSelected = $state<Record<string, boolean>>({});
 	let unprocessingItem = $state<Record<number, boolean>>({});
 	let fetchingPageCounts = $state<Record<number, boolean>>({});
-
+	let expandedMergedItems = $state<Record<string, boolean>>({});
 	let itemPrintMode = $state<Record<number, 'duplex' | 'simplex'>>({});
 
 	const mergedPdfCache = createRefCountedCache<string>();
@@ -137,16 +138,27 @@
 
 		fetchingPageCounts = { ...fetchingPageCounts, [item.id]: true };
 		try {
-			const res = await fetch('http://127.0.0.1:8000/api/pdf/count', {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					Authorization: `Bearer ${token.value}`
-				},
-				body: JSON.stringify({ url: item.file })
+			const fileRes = await fetch(item.file, {
+				headers: { Authorization: `Bearer ${token.value}` }
 			});
-			if (!res.ok) throw new Error(`Page count failed for ${item.file}`);
-			const data = await res.json();
+			if (!fileRes.ok) throw new Error(`Failed to fetch PDF for page count: ${item.file}`);
+			const pdfBlob = await fileRes.blob();
+
+			const formData = new FormData();
+			formData.append('file', pdfBlob, item.file.split('/').pop() || 'document.pdf');
+
+			const countRes = await fetch('http://127.0.0.1:8000/api/pdf/count/', {
+				method: 'POST',
+				headers: { Authorization: `Bearer ${token.value}` },
+				body: formData
+			});
+
+			if (!countRes.ok) {
+				const errText = await countRes.text();
+				throw new Error(`Page count failed: ${errText}`);
+			}
+
+			const data = await countRes.json();
 			const count = data.page_count || 1;
 
 			const userQueue = groupedQueue[item.user] || [];
@@ -167,7 +179,7 @@
 	async function chargeForPdf(item: QueueItem): Promise<boolean> {
 		if (!item.pageCount) return false;
 		const mode = itemPrintMode[item.id] || 'duplex';
-		if (mode !== 'simplex') return true; // no charge needed
+		if (mode !== 'simplex') return true;
 
 		const sheets = item.pageCount % 2 === 0 ? item.pageCount : item.pageCount + 1;
 		if (sheets <= 0) return true;
@@ -235,8 +247,6 @@
 			printing = { ...printing, [id]: false };
 		}
 	}
-
-	// --- Rest of logic (merge, confirm, etc.) unchanged below ---
 
 	async function mergePdfsBackend(user: string) {
 		const files = Object.entries(selectedItems[user] || {})
@@ -366,6 +376,8 @@
 			selectedIndices.length > 0 ? Math.max(...selectedIndices) : userItems.length - 1;
 		const insertIndex = maxIndex + 1;
 
+		const mergedId = `merged_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+
 		const mergedItem: QueueItem = {
 			id: -1,
 			file: url,
@@ -376,10 +388,8 @@
 			isMerged: true,
 			mergedFrom: files,
 			hidden: false,
-			pageCount: files.reduce((sum, f) => {
-				const orig = queue.find((q) => q.file === f && q.user === user);
-				return sum + (orig?.pageCount || 1);
-			}, 0)
+			mergedId,
+			pageCount: -1 // Will be computed reactively
 		};
 
 		const updatedItems = userItems.map((item) =>
@@ -420,6 +430,75 @@
 		fetchQueue();
 	});
 
+	// 🔁 Accurately recompute merged PDF page counts from live groupedQueue
+	$effect(() => {
+		for (const [user, items] of Object.entries(groupedQueue)) {
+			for (const item of items) {
+				if (!item.isMerged || !item.mergedFrom || !item.mergedId) continue;
+
+				let total = 0;
+				let allResolved = true;
+
+				for (const sourceFile of item.mergedFrom) {
+					const sourceItem = items.find((i) => i.file === sourceFile && !i.isMerged);
+					if (!sourceItem) {
+						const fallback = queue.find((q) => q.file === sourceFile && q.user === user);
+						if (fallback?.pageCount !== undefined) {
+							total += fallback.pageCount;
+						} else {
+							allResolved = false;
+							total += 1;
+						}
+					} else if (sourceItem.pageCount !== undefined) {
+						total += sourceItem.pageCount;
+					} else {
+						allResolved = false;
+						total += 1;
+					}
+				}
+
+				if (allResolved && item.pageCount !== total) {
+					const idx = items.findIndex((i) => i.mergedId === item.mergedId);
+					if (idx !== -1) {
+						const updated = { ...item, pageCount: total };
+						const newItems = [...items];
+						newItems[idx] = updated;
+						groupedQueue = { ...groupedQueue, [user]: newItems };
+					}
+				} else if (!allResolved && item.pageCount === -1) {
+					const idx = items.findIndex((i) => i.mergedId === item.mergedId);
+					if (idx !== -1) {
+						const updated = { ...item, pageCount: total };
+						const newItems = [...items];
+						newItems[idx] = updated;
+						groupedQueue = { ...groupedQueue, [user]: newItems };
+					}
+				}
+			}
+		}
+	});
+
+	// Compute total pages per user (for header)
+	let userPageTotals = $state<Record<string, number | '...'>>({});
+
+	$effect(() => {
+		const newTotals: Record<string, number | '...'> = {};
+		for (const [user, items] of Object.entries(groupedQueue)) {
+			let total = 0;
+			let hasPending = false;
+			for (const item of items) {
+				if (item.hidden) continue;
+				if (fetchingPageCounts[item.id]) {
+					hasPending = true;
+					break;
+				}
+				total += item.pageCount ?? 1;
+			}
+			newTotals[user] = hasPending ? '...' : total;
+		}
+		userPageTotals = newTotals;
+	});
+
 	function toggleSelect(user: string, file: string, checked: boolean) {
 		if (mergingFiles[file]) return;
 		selectedItems = {
@@ -434,7 +513,7 @@
 		if (mergedIndex === -1) return;
 
 		const mergedItem = userItems[mergedIndex];
-		if (!mergedItem.mergedFrom) return;
+		if (!mergedItem.mergedFrom || !mergedItem.mergedId) return;
 
 		releasePdfBlob(fileUrl);
 
@@ -459,6 +538,7 @@
 		const restored = [...withoutMerged];
 		restored.splice(mergedIndex, 0, ...restoredOriginals);
 		groupedQueue = { ...groupedQueue, [user]: restored };
+
 		selectedItems = { ...selectedItems, [user]: {} };
 	}
 
@@ -643,7 +723,13 @@
 					<div class="overflow-hidden rounded-lg border">
 						<div class="flex flex-wrap items-center justify-between gap-4 bg-muted/50 px-6 py-4">
 							<div>
-								<h2 class="text-xl font-semibold">{user}</h2>
+								<h2 class="text-xl font-semibold">
+									{user}
+									<span class="ml-2 text-sm font-normal text-muted-foreground">
+										({userPageTotals[user]}
+										{userPageTotals[user] === 1 ? 'page' : 'pages'})
+									</span>
+								</h2>
 							</div>
 							<div class="flex flex-wrap gap-2">
 								<Button
@@ -724,12 +810,22 @@
 															toggleSelect(item.user, item.file, checked)}
 														disabled={mergingFiles[item.file]}
 													/>
-												{:else}
-													<div
-														class="flex h-4 w-4 items-center justify-center text-muted-foreground"
+												{:else if item.mergedId}
+													<Button
+														variant="ghost"
+														size="sm"
+														class="h-6 w-6 p-0"
+														onclick={() => {
+															expandedMergedItems[item.mergedId!] =
+																!expandedMergedItems[item.mergedId!];
+														}}
 													>
-														<ChevronRight class="h-3 w-3" />
-													</div>
+														{#if expandedMergedItems[item.mergedId]}
+															<ChevronDown class="h-3 w-3 text-muted-foreground" />
+														{:else}
+															<ChevronRight class="h-3 w-3 text-muted-foreground" />
+														{/if}
+													</Button>
 												{/if}
 											</TableCell>
 											<TableCell class="font-medium">
@@ -743,7 +839,7 @@
 												{:else}
 													{item.file.split('/').pop()}
 												{/if}
-												{#if item.pageCount !== undefined}
+												{#if item.pageCount !== undefined && item.pageCount >= 0}
 													<span class="ml-2 text-xs text-muted-foreground"
 														>({item.pageCount} pg)</span
 													>
@@ -920,6 +1016,64 @@
 												</div>
 											</TableCell>
 										</TableRow>
+
+										<!-- Expanded originals -->
+										{#if item.isMerged && item.mergedFrom && item.mergedId && expandedMergedItems[item.mergedId]}
+											{#each item.mergedFrom as originalFile}
+												{#if queue.find((q) => q.file === originalFile && q.user === item.user)}
+													{@const original = queue.find(
+														(q) => q.file === originalFile && q.user === item.user
+													)!}
+													<TableRow class="bg-muted/30">
+														<TableCell></TableCell>
+														<TableCell class="text-sm font-medium">
+															<FileText class="mr-1 inline h-3 w-3" />
+															{original.file.split('/').pop()}
+															{#if original.pageCount !== undefined}
+																<span class="ml-1 text-xs text-muted-foreground"
+																	>({original.pageCount} pg)</span
+																>
+															{/if}
+														</TableCell>
+														<TableCell>
+															<Badge variant="outline">Original</Badge>
+														</TableCell>
+														<TableCell>{new Date(original.created_at).toLocaleString()}</TableCell>
+														<TableCell>
+															<span class="text-sm text-muted-foreground">Duplex</span>
+														</TableCell>
+														<TableCell class="text-right">
+															<div class="flex justify-end gap-2">
+																<Tooltip>
+																	<TooltipTrigger>
+																		<Button
+																			variant="outline"
+																			size="sm"
+																			onclick={() => openPreview(original.file)}
+																		>
+																			<Eye class="h-3 w-3" />
+																		</Button>
+																	</TooltipTrigger>
+																	<TooltipContent>Preview original</TooltipContent>
+																</Tooltip>
+																<Tooltip>
+																	<TooltipTrigger>
+																		<Button
+																			variant="outline"
+																			size="sm"
+																			onclick={() => openInNewTab(original.file)}
+																		>
+																			<ExternalLink class="h-3 w-3" />
+																		</Button>
+																	</TooltipTrigger>
+																	<TooltipContent>Open original</TooltipContent>
+																</Tooltip>
+															</div>
+														</TableCell>
+													</TableRow>
+												{/if}
+											{/each}
+										{/if}
 									{/if}
 								{/each}
 							</TableBody>

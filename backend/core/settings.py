@@ -51,7 +51,7 @@ INSTALLED_APPS = [
     "apps.queue",
     "apps.printers",
 ]
-
+APPEND_SLASH = False
 CORS_ALLOW_ALL_ORIGINS = True  # CORS
 
 MIDDLEWARE = [

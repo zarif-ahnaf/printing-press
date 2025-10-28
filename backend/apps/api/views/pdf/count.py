@@ -1,16 +1,13 @@
 import io
 
 from django.http import HttpResponse
-from ninja import File, Router, Schema
+from ninja import File, Router
 from ninja.files import UploadedFile
 from pypdf import PdfReader
 
+from ...schemas.count import PDFPageCountOut
+
 router = Router(tags=["PDF"])
-
-
-class PDFPageCountOut(Schema):
-    page_count: int
-    filename: str
 
 
 @router.post("", response=PDFPageCountOut)
