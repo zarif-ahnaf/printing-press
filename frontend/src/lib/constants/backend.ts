@@ -13,3 +13,5 @@ export var PDF_CONVERT_URL = `${API_URL}/convert/pdf/`;
 export var ALL_USER_ENDPOINT = `${API_URL}/users/`;
 export var USER_ENDPOINT = `${API_URL}/user/`;
 export var MERGE_ENDPOINT = `${API_URL}/convert/merge/`;
+export var CHARGE_ENDPOINT = `${API_URL}/charge/`;
+export var LOGOUT_URL = `${API_URL}/user/logout/`;

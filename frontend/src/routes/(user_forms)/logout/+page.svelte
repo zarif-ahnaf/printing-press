@@ -10,13 +10,19 @@
 	} from '$lib/components/ui/card';
 	import { LogOut } from 'lucide-svelte';
 	import { token } from '$lib/stores/token.svelte';
-	import { is_logged_in } from '$lib/stores/auth.svelte';
+	import { LOGOUT_URL } from '$lib/constants/backend';
 
 	let next = $state('/login');
 
-	onMount(() => {
+	onMount(async () => {
 		// Clear auth state
 		token.set(null);
+		// Send logout request to backend
+		await fetch(LOGOUT_URL, {
+			method: 'DELETE'
+		}).catch((error) => {
+			console.error('Error during logout request:', error);
+		});
 
 		// Parse and validate `next` from URL
 		const urlParams = new URLSearchParams(window.location.search);

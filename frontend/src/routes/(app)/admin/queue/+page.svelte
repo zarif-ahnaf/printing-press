@@ -28,6 +28,13 @@
 		TooltipProvider,
 		TooltipTrigger
 	} from '$lib/components/ui/tooltip';
+	import {
+		DropdownMenu,
+		DropdownMenuContent,
+		DropdownMenuItem,
+		DropdownMenuSeparator,
+		DropdownMenuTrigger
+	} from '$lib/components/ui/dropdown-menu';
 
 	// Lucide Icons
 	import {
@@ -45,7 +52,7 @@
 		Repeat
 	} from 'lucide-svelte';
 
-	import { QUEUE_URL } from '$lib/constants/backend';
+	import { CHARGE_ENDPOINT, MERGE_ENDPOINT, QUEUE_URL } from '$lib/constants/backend';
 	import { token } from '$lib/stores/token.svelte';
 	import { createRefCountedCache } from '$lib/cache/createRefCountedCache';
 	import { cn } from '$lib/utils';
@@ -78,7 +85,6 @@
 	let mergingAllForUser = $state<Record<string, boolean>>({});
 	let confirmingSelected = $state<Record<string, boolean>>({});
 	let unprocessingItem = $state<Record<number, boolean>>({});
-	let fetchingPageCounts = $state<Record<number, boolean>>({});
 	let expandedMergedItems = $state<Record<string, boolean>>({});
 	let itemPrintMode = $state<Record<number, 'duplex' | 'simplex'>>({});
 
@@ -132,50 +138,6 @@
 		}
 	}
 
-	async function fetchPageCount(item: QueueItem): Promise<number> {
-		if (item.pageCount !== undefined) return item.pageCount;
-		if (fetchingPageCounts[item.id]) return 1;
-
-		fetchingPageCounts = { ...fetchingPageCounts, [item.id]: true };
-		try {
-			const fileRes = await fetch(item.file, {
-				headers: { Authorization: `Bearer ${token.value}` }
-			});
-			if (!fileRes.ok) throw new Error(`Failed to fetch PDF for page count: ${item.file}`);
-			const pdfBlob = await fileRes.blob();
-
-			const formData = new FormData();
-			formData.append('file', pdfBlob, item.file.split('/').pop() || 'document.pdf');
-
-			const countRes = await fetch('http://127.0.0.1:8000/api/pdf/count/', {
-				method: 'POST',
-				headers: { Authorization: `Bearer ${token.value}` },
-				body: formData
-			});
-
-			if (!countRes.ok) {
-				const errText = await countRes.text();
-				throw new Error(`Page count failed: ${errText}`);
-			}
-
-			const data = await countRes.json();
-			const count = data.page_count || 1;
-
-			const userQueue = groupedQueue[item.user] || [];
-			const idx = userQueue.findIndex((i) => i.id === item.id);
-			if (idx !== -1) {
-				userQueue[idx] = { ...userQueue[idx], pageCount: count };
-				groupedQueue = { ...groupedQueue, [item.user]: userQueue };
-			}
-			return count;
-		} catch (err) {
-			console.warn('Page count error:', err);
-			return 1;
-		} finally {
-			fetchingPageCounts = { ...fetchingPageCounts, [item.id]: false };
-		}
-	}
-
 	async function chargeForPdf(item: QueueItem): Promise<boolean> {
 		if (!item.pageCount) return false;
 		const mode = itemPrintMode[item.id] || 'duplex';
@@ -186,7 +148,7 @@
 
 		charging = { ...charging, [item.id]: true };
 		try {
-			const res = await fetch('http://127.0.0.1:8000/api/charge', {
+			const res = await fetch(CHARGE_ENDPOINT, {
 				method: 'POST',
 				headers: {
 					'Content-Type': 'application/json',
@@ -252,7 +214,7 @@
 		const files = Object.entries(selectedItems[user] || {})
 			.filter(([, checked]) => checked)
 			.map(([file]) => file);
-		if (files.length === 0) return;
+		if (files.length < 2) return; // Safety: should not happen due to UI guard
 
 		const cacheKey = hashFiles(files);
 		let blobUrl: string;
@@ -277,7 +239,7 @@
 					formData.append('files', blob, url.split('/').pop() || 'file.pdf');
 				}
 
-				const mergeRes = await fetch('http://127.0.0.1:8000/api/convert/merge/', {
+				const mergeRes = await fetch(MERGE_ENDPOINT, {
 					method: 'POST',
 					body: formData,
 					headers: { Authorization: `Bearer ${token.value}` }
@@ -312,7 +274,7 @@
 		const filesToMerge = userItems
 			.filter((item) => !item.hidden && !item.isMerged)
 			.map((item) => item.file);
-		if (filesToMerge.length === 0) return;
+		if (filesToMerge.length < 2) return; // Cannot merge <2 files
 
 		const cacheKey = hashFiles(filesToMerge);
 		let blobUrl: string;
@@ -336,7 +298,7 @@
 					formData.append('files', blob, url.split('/').pop() || 'file.pdf');
 				}
 
-				const mergeRes = await fetch('http://127.0.0.1:8000/api/convert/merge/', {
+				const mergeRes = await fetch(MERGE_ENDPOINT, {
 					method: 'POST',
 					body: formData,
 					headers: { Authorization: `Bearer ${token.value}` }
@@ -389,7 +351,7 @@
 			mergedFrom: files,
 			hidden: false,
 			mergedId,
-			pageCount: -1 // Will be computed reactively
+			pageCount: undefined
 		};
 
 		const updatedItems = userItems.map((item) =>
@@ -410,13 +372,15 @@
 				});
 				if (!res.ok) throw new Error('Failed to fetch queue');
 				const data = await res.json();
-				queue = data.queue || [];
+				queue = (data.queue || []).map((item: any) => ({
+					...item,
+					pageCount: item.page_count ?? undefined
+				}));
 				groupedQueue = groupByUser(queue);
 				selectedItems = {};
 				itemPrintMode = {};
 				for (const item of queue) {
 					itemPrintMode[item.id] = 'duplex';
-					if (item.pageCount === undefined) fetchPageCount(item);
 				}
 				for (const user of Object.keys(groupedQueue)) {
 					selectedItems[user] = {};
@@ -430,7 +394,6 @@
 		fetchQueue();
 	});
 
-	// 🔁 Accurately recompute merged PDF page counts from live groupedQueue
 	$effect(() => {
 		for (const [user, items] of Object.entries(groupedQueue)) {
 			for (const item of items) {
@@ -465,7 +428,7 @@
 						newItems[idx] = updated;
 						groupedQueue = { ...groupedQueue, [user]: newItems };
 					}
-				} else if (!allResolved && item.pageCount === -1) {
+				} else if (!allResolved && item.pageCount === undefined) {
 					const idx = items.findIndex((i) => i.mergedId === item.mergedId);
 					if (idx !== -1) {
 						const updated = { ...item, pageCount: total };
@@ -478,23 +441,17 @@
 		}
 	});
 
-	// Compute total pages per user (for header)
-	let userPageTotals = $state<Record<string, number | '...'>>({});
+	let userPageTotals = $state<Record<string, number>>({});
 
 	$effect(() => {
-		const newTotals: Record<string, number | '...'> = {};
+		const newTotals: Record<string, number> = {};
 		for (const [user, items] of Object.entries(groupedQueue)) {
 			let total = 0;
-			let hasPending = false;
 			for (const item of items) {
 				if (item.hidden) continue;
-				if (fetchingPageCounts[item.id]) {
-					hasPending = true;
-					break;
-				}
 				total += item.pageCount ?? 1;
 			}
-			newTotals[user] = hasPending ? '...' : total;
+			newTotals[user] = total;
 		}
 		userPageTotals = newTotals;
 	});
@@ -580,7 +537,7 @@
 		confirmingSelected = { ...confirmingSelected, [user]: true };
 		try {
 			for (const item of itemsToConfirm) {
-				const res = await fetch(`http://127.0.0.1:8000/api/queue/${item.id}/processed`, {
+				const res = await fetch(`${QUEUE_URL}${item.id}/processed`, {
 					method: 'POST',
 					headers: { Authorization: `Bearer ${token.value}`, 'Content-Type': 'application/json' }
 				});
@@ -609,7 +566,7 @@
 		const { id, user } = item;
 		unprocessingItem = { ...unprocessingItem, [id]: true };
 		try {
-			const res = await fetch(`http://127.0.0.1:8000/api/queue/${id}/processed`, {
+			const res = await fetch(`${QUEUE_URL}${id}/processed`, {
 				method: 'DELETE',
 				headers: { Authorization: `Bearer ${token.value}`, 'Content-Type': 'application/json' }
 			});
@@ -633,9 +590,12 @@
 		const { id, user } = item;
 		unprocessingItem = { ...unprocessingItem, [id]: true };
 		try {
-			const res = await fetch(`http://127.0.0.1:8000/api/queue/${id}/processed`, {
+			const res = await fetch(`${QUEUE_URL}${id}/processed`, {
 				method: 'POST',
-				headers: { Authorization: `Bearer ${token.value}`, 'Content-Type': 'application/json' }
+				headers: {
+					Authorization: `Bearer ${token.value}`,
+					'Content-Type': 'application/json'
+				}
 			});
 			if (!res.ok) {
 				const err = await res.json();
@@ -668,8 +628,8 @@
 	}
 
 	onDestroy(() => {
-		for (const [key, url] of mergedPdfCache.entries()) URL.revokeObjectURL(url as string);
-		for (const [key, url] of fetchedPdfCache.entries()) URL.revokeObjectURL(url as string);
+		for (const [_, url] of mergedPdfCache.entries()) URL.revokeObjectURL(url as string);
+		for (const [_, url] of fetchedPdfCache.entries()) URL.revokeObjectURL(url as string);
 		mergedPdfCache.evictAll();
 		fetchedPdfCache.evictAll();
 	});
@@ -732,38 +692,64 @@
 								</h2>
 							</div>
 							<div class="flex flex-wrap gap-2">
-								<Button
-									variant="outline"
-									size="sm"
-									disabled={mergingAllForUser[user] ||
-										items.filter((i) => !i.hidden && !i.isMerged).length === 0}
-									onclick={() => mergeAllForUserBackend(user)}
-								>
-									{#if mergingAllForUser[user]}
-										<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Merging All...
+								<!-- Unified Merge Button: only shown if ≥2 mergeable items exist -->
+								{#if items.filter((i) => !i.hidden && !i.isMerged).length >= 2}
+									{#if selectedItems[user]}
+										{#if Object.values(selectedItems[user]).filter(Boolean).length >= 2}
+											<Button
+												variant="default"
+												size="sm"
+												disabled={merging[user] ||
+													mergingAllForUser[user] ||
+													Object.values(mergingFiles).some((v) => v)}
+												onclick={() => mergePdfsBackend(user)}
+											>
+												{#if merging[user] || mergingAllForUser[user]}
+													<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Merging...
+												{:else}
+													<Merge class="mr-2 h-4 w-4" /> Merge Selected
+												{/if}
+											</Button>
+										{:else}
+											<Button
+												variant="default"
+												size="sm"
+												disabled={merging[user] ||
+													mergingAllForUser[user] ||
+													Object.values(mergingFiles).some((v) => v)}
+												onclick={() => mergeAllForUserBackend(user)}
+											>
+												{#if merging[user] || mergingAllForUser[user]}
+													<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Merging...
+												{:else}
+													<Merge class="mr-2 h-4 w-4" /> Merge All
+												{/if}
+											</Button>
+										{/if}
 									{:else}
-										<Merge class="mr-2 h-4 w-4" /> Merge All
+										<Button
+											variant="default"
+											size="sm"
+											disabled={merging[user] ||
+												mergingAllForUser[user] ||
+												Object.values(mergingFiles).some((v) => v)}
+											onclick={() => mergeAllForUserBackend(user)}
+										>
+											{#if merging[user] || mergingAllForUser[user]}
+												<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Merging...
+											{:else}
+												<Merge class="mr-2 h-4 w-4" /> Merge All
+											{/if}
+										</Button>
 									{/if}
-								</Button>
+								{/if}
 
-								<Button
-									variant="default"
-									size="sm"
-									disabled={merging[user] ||
-										Object.values(selectedItems[user] || {}).filter(Boolean).length === 0}
-									onclick={() => mergePdfsBackend(user)}
-								>
-									{#if merging[user]}
-										<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Merging...
-									{:else}
-										<Merge class="mr-2 h-4 w-4" /> Merge Selected
-									{/if}
-								</Button>
-
+								<!-- Confirm Selected -->
 								<Button
 									variant="outline"
 									size="sm"
 									disabled={confirmingSelected[user] ||
+										!selectedItems[user] ||
 										Object.values(selectedItems[user] || {}).filter(Boolean).length === 0}
 									onclick={() => confirmSelectedItems(user)}
 								>
@@ -899,8 +885,10 @@
 												{/if}
 											</TableCell>
 
+											<!-- Responsive Actions Cell -->
 											<TableCell class="text-right">
-												<div class="flex justify-end gap-2">
+												<!-- Desktop -->
+												<div class="hidden justify-end gap-2 md:flex">
 													<div class="flex rounded-md border border-input shadow-sm">
 														<Tooltip>
 															<TooltipTrigger>
@@ -1013,6 +1001,97 @@
 															<TooltipContent>Unmerge</TooltipContent>
 														</Tooltip>
 													{/if}
+												</div>
+
+												<!-- Mobile/Medium -->
+												<div class="md:hidden">
+													<DropdownMenu>
+														<DropdownMenuTrigger>
+															<Button variant="outline" size="icon">
+																<ChevronDown class="h-4 w-4" />
+															</Button>
+														</DropdownMenuTrigger>
+														<DropdownMenuContent align="end" class="w-56">
+															<DropdownMenuItem
+																onclick={() => openPreview(item.file)}
+																disabled={mergingFiles[item.file]}
+															>
+																<Eye class="mr-2 h-4 w-4" />
+																Preview
+															</DropdownMenuItem>
+															<DropdownMenuItem
+																onclick={() => openInNewTab(item.file)}
+																disabled={mergingFiles[item.file]}
+															>
+																<ExternalLink class="mr-2 h-4 w-4" />
+																Open in new tab
+															</DropdownMenuItem>
+
+															<DropdownMenuSeparator />
+
+															<DropdownMenuItem
+																onclick={() => printPdf(item)}
+																disabled={printing[item.id] ||
+																	charging[item.id] ||
+																	mergingFiles[item.file]}
+																class={cn(
+																	'flex items-center',
+																	(printing[item.id] || charging[item.id]) && 'opacity-75'
+																)}
+															>
+																{#if charging[item.id]}
+																	<CreditCard class="mr-2 h-3 w-3 animate-pulse" />
+																	Charging...
+																{:else if printing[item.id]}
+																	<LoaderCircle class="mr-2 h-3 w-3 animate-spin" />
+																	Printing...
+																{:else}
+																	<Printer class="mr-2 h-4 w-4" />
+																	Print ({itemPrintMode[item.id] === 'simplex'
+																		? 'Simplex'
+																		: 'Duplex'})
+																{/if}
+															</DropdownMenuItem>
+
+															{#if item.processed && !item.isMerged}
+																<DropdownMenuItem
+																	onclick={() => unprocessItem(item)}
+																	disabled={unprocessingItem[item.id]}
+																>
+																	{#if unprocessingItem[item.id]}
+																		<LoaderCircle class="mr-2 h-4 w-4 animate-spin" />
+																		Unprocessing...
+																	{:else}
+																		<X class="mr-2 h-4 w-4" />
+																		Unprocess
+																	{/if}
+																</DropdownMenuItem>
+															{:else if !item.processed && !item.isMerged}
+																<DropdownMenuItem
+																	onclick={() => confirmItem(item)}
+																	disabled={unprocessingItem[item.id]}
+																>
+																	{#if unprocessingItem[item.id]}
+																		<LoaderCircle class="mr-2 h-4 w-4 animate-spin" />
+																		Confirming...
+																	{:else}
+																		<CheckCircle class="mr-2 h-4 w-4" />
+																		Confirm
+																	{/if}
+																</DropdownMenuItem>
+															{/if}
+
+															{#if item.isMerged}
+																<DropdownMenuItem
+																	onclick={() => unmerge(item.user, item.file)}
+																	class="text-destructive focus:text-destructive"
+																>
+																	<X class="mr-2 h-4 w-4" />
+																	Unmerge
+																</DropdownMenuItem>
+															{/if}
+														</DropdownMenuContent>
+													</DropdownMenu>
 												</div>
 											</TableCell>
 										</TableRow>

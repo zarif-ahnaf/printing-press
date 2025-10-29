@@ -26,7 +26,12 @@ router = Router(tags=["Queue"])
 COST_PER_PAGE = Decimal("1.0")
 
 
-@router.post("", auth=AuthBearer())
+@router.post(
+    "",
+    auth=AuthBearer(),
+    response=QueueUploadResponse,
+    summary="Queue files for processing",
+)
 def queue_files(
     request: HttpRequest,
     files: File[list[UploadedFile]],
@@ -102,7 +107,12 @@ def queue_files(
     )
 
 
-@router.get("", auth=AuthBearer(), summary="List queued files")
+@router.get(
+    "",
+    auth=AuthBearer(),
+    response=QueueListResponse,
+    summary="List queued files",
+)
 @login_required
 def list_queue(request: HttpRequest):
     current_user = request.auth
