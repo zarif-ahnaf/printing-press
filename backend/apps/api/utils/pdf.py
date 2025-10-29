@@ -1,7 +1,10 @@
+import io
 from typing import Optional
 
 import fitz
 from ninja.files import UploadedFile
+from pypdf import PdfReader
+from pypdf.errors import PdfReadError
 
 
 def extract_non_blank_pages(doc: fitz.Document, text_threshold: int = 10) -> list[int]:
@@ -75,28 +78,19 @@ def process_pdf_file(
             doc.close()
 
 
-def count_pdf_pages(file_content: bytes, filename: str) -> int:
+def count_pdf_pages(pdf_bytes: bytes, filename: str = "") -> int:
     """
-    Count the number of pages in a PDF file given its raw bytes.
-
-    Args:
-        file_content (bytes): Raw content of the PDF file.
-        filename (str): Name of the file (used for error context).
-
-    Returns:
-        int: Number of pages in the PDF.
-
-    Raises:
-        ValueError: If the file is not a valid PDF or has no pages.
+    Count pages in a PDF from raw bytes using pypdf.
+    Raises ValueError on invalid/encrypted/corrupted PDFs.
     """
     try:
-        doc = fitz.open(stream=file_content, filetype="pdf")
-        num_pages = doc.page_count
-        doc.close()
-    except Exception as e:
-        raise ValueError(f"Invalid PDF {filename}: {str(e)}")
-
-    if num_pages <= 0:
-        raise ValueError(f"PDF {filename} contains no pages")
-
-    return num_pages
+        reader = PdfReader(io.BytesIO(pdf_bytes))
+        if reader.is_encrypted:
+            try:
+                reader.decrypt("")
+            except Exception:
+                raise ValueError("Encrypted PDFs are not allowed.")
+        return len(reader.pages)
+    except (PdfReadError, ValueError, OSError, TypeError) as e:
+        raise ValueError(f"Invalid or corrupted PDF: {str(e)}")
+        raise ValueError(f"Invalid or corrupted PDF: {str(e)}")

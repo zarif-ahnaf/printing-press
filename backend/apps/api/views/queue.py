@@ -33,9 +33,9 @@ def queue_files(
     payload: Form[QueueFileUpload],
 ):
     current_user = request.auth
+
     # Determine target user
     if payload.user_id is not None:
-        # Admin trying to specify a user
         if not current_user.is_staff:
             raise HttpError(403, "Only admins can specify a user_id.")
         try:
@@ -43,30 +43,31 @@ def queue_files(
         except User.DoesNotExist:
             raise HttpError(404, "User not found.")
     else:
-        # Regular user uploading for themselves
         target_user = current_user
 
     if not files:
-        return {"message": "No files provided"}
+        raise HttpError(400, "No files provided")
 
     total_pages = 0
-    file_data_list: list[tuple[str, bytes, int]] = []  # (filename, content, page_count)
+    file_data_list: list[tuple[str, bytes, int]] = []
 
     for uploaded_file in files:
         filename = uploaded_file.name
         if not filename:
             raise HttpError(400, "Uploaded file has no name")
-
         if not filename.lower().endswith(".pdf"):
             raise HttpError(400, f"Only PDF files allowed. Invalid: {filename}")
 
         file_content = uploaded_file.read()
+        if not file_content:
+            raise HttpError(400, f"File {filename} is empty.")
+
         try:
             num_pages = count_pdf_pages(file_content, filename)
         except ValueError as e:
             raise HttpError(400, str(e))
 
-        if num_pages == 0:
+        if num_pages <= 0:
             raise HttpError(400, f"No valid pages found in {filename}")
 
         total_pages += num_pages
@@ -75,13 +76,21 @@ def queue_files(
     if total_pages == 0:
         raise HttpError(400, "No valid pages found in uploaded files")
 
-    # Create queue items without wallet or transaction logic
+    # Create Queue objects with page_count
     queue_items = []
     for filename, content, num_pages in file_data_list:
         file_for_db = SimpleUploadedFile(
-            name=filename, content=content, content_type="application/pdf"
+            name=filename,
+            content=content,
+            content_type="application/pdf",
         )
-        queue_items.append(Queue(file=file_for_db, user=target_user))
+        queue_items.append(
+            Queue(
+                file=file_for_db,
+                user=target_user,
+                page_count=num_pages,
+            )
+        )
 
     created_items = Queue.objects.bulk_create(queue_items)
 
@@ -95,13 +104,7 @@ def queue_files(
 
 @router.get("", auth=AuthBearer(), summary="List queued files")
 @login_required
-def list_queue(
-    request: HttpRequest,
-):
-    """
-    Fetch all queued files for the current user.
-    Admins can optionally see all users' queues
-    """
+def list_queue(request: HttpRequest):
     current_user = request.auth
     queryset = Queue.objects.filter(user=current_user)
 
@@ -113,6 +116,7 @@ def list_queue(
             created_at=item.created_at.isoformat(),
             user=item.user.username,
             user_id=item.user.pk,
+            page_count=item.page_count,
         )
         for item in queryset
     ]
