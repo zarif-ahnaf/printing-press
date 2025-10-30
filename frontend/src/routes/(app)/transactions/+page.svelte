@@ -1,70 +1,75 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import { toast } from 'svelte-sonner';
 	import TransactionList from '$lib/components/TransactionList.svelte';
 	import { token } from '$lib/stores/token.svelte';
 	import { client } from '$lib/client';
-	import { toast } from 'svelte-sonner';
 
 	let transactions = $state<TransactionResponse[]>([]);
 	let balance = $state<number | undefined>(undefined);
 	let isLoading = $state(true);
-	let error = $state<string | null>(null);
 
-	type TransactionResponse = {
+	type TransactionType = 'deposit' | 'charge';
+
+	interface TransactionResponse {
 		id: number;
-		transaction_type: 'deposit' | 'charge';
+		transaction_type: TransactionType;
 		amount: string;
 		description: string;
 		created_at: string;
-	};
+	}
 
-	// --- Helper: Safely parse JSON without consuming original body ---
-	async function safeJson(response: Response): Promise<any> {
-		if (!response.bodyUsed && response.headers.get('content-type')?.includes('application/json')) {
-			try {
-				return await response.clone().json();
-			} catch {
-				toast.error('Failed to parse JSON response');
-			}
-		}
-		return {};
+	function isValidTransactionType(type: string): type is TransactionType {
+		return type === 'deposit' || type === 'charge';
 	}
 
 	onMount(async () => {
-		try {
-			const [balanceRes, transactionsRes] = await Promise.all([
-				client.GET('/api/balance/', {
-					headers: { Authorization: `Bearer ${token.value}` }
-				}),
-				client.GET('/api/transactions/', {
-					headers: { Authorization: `Bearer ${token.value}` }
-				})
-			]);
+		isLoading = true;
+		const headers = { Authorization: `Bearer ${token.value}` };
 
-			if (!balanceRes.response.ok) {
-				const errData = await safeJson(balanceRes.response);
-				throw new Error(errData.detail || `Balance API: ${balanceRes.response.status}`);
-			}
-
-			if (!transactionsRes.response.ok) {
-				const errData = await safeJson(transactionsRes.response);
-				throw new Error(errData.detail || `Transactions API: ${transactionsRes.response.status}`);
-			}
-
-			const balanceData = await safeJson(balanceRes.response);
-			const transactionsData = (await safeJson(transactionsRes.response)) as TransactionResponse[];
-
-			balance = parseFloat(balanceData.balance);
-			transactions = transactionsData.sort(
-				(a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-			);
-		} catch (err) {
-			console.error('Failed to fetch data:', err);
-			error = err instanceof Error ? err.message : 'Failed to load data';
-		} finally {
+		// Fetch balance first
+		const { data: balanceData, error: balanceError } = await client.GET('/api/balance/', {
+			headers
+		});
+		if (balanceError) {
+			toast.error(`Failed to load balance: ${balanceError ?? 'Unknown error'}`);
 			isLoading = false;
+			return;
 		}
+
+		// Then fetch transactions
+		const { data: transactionData, error: transactionError } = await client.GET(
+			'/api/transactions/',
+			{ headers }
+		);
+		if (transactionError) {
+			toast.error(`Failed to load transactions: ${transactionError ?? 'Unknown error'}`);
+			isLoading = false;
+			return;
+		}
+
+		// Success: update state
+		balance = parseFloat(balanceData.balance);
+
+		const validated: TransactionResponse[] = [];
+		for (const tx of transactionData) {
+			if (isValidTransactionType(tx.transaction_type)) {
+				validated.push({
+					id: tx.id,
+					transaction_type: tx.transaction_type,
+					amount: tx.amount,
+					description: tx.description,
+					created_at: tx.created_at
+				});
+			}
+		}
+
+		transactions = validated.sort(
+			(a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+		);
+
+		isLoading = false;
 	});
 </script>
 
-<TransactionList {transactions} {balance} {isLoading} {error} title="My Transaction History" />
+<TransactionList {transactions} {balance} {isLoading} title="My Transaction History" />
