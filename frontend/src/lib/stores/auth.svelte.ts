@@ -1,4 +1,4 @@
-import { USER_ENDPOINT } from '$lib/constants/backend';
+import { client } from '$lib/client';
 import { token } from './token.svelte';
 
 let fetchState = $state<'not_fetched' | 'fetching' | 'fetched'>('not_fetched');
@@ -15,12 +15,10 @@ $effect.root(() => {
 	$effect(() => {
 		if (token.value) {
 			fetchState = 'fetching';
-			fetch(USER_ENDPOINT, {
-				headers: {
-					Authorization: `Bearer ${token.value}`
-				}
-			})
-				.then(async (res) => {
+			client
+				.GET('/api/user/')
+				.then(async (_res) => {
+					const res = _res.response;
 					if (res.ok) {
 						isLoggedInState = true;
 						const data = await res.json();

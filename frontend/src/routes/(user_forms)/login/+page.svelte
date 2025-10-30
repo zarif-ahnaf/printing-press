@@ -10,11 +10,11 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { toast } from 'svelte-sonner';
-	import { LOGIN_URL } from '$lib/constants/backend';
 	import { Eye, EyeOff } from 'lucide-svelte';
 	import { token } from '$lib/stores/token.svelte';
 	import { is_logged_in } from '$lib/stores/auth.svelte';
 	import { onMount } from 'svelte';
+	import { client } from '$lib/client';
 
 	let username = $state('');
 	let password = $state('');
@@ -45,20 +45,19 @@
 		loading = true;
 
 		try {
-			const res = await fetch(LOGIN_URL, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({
+			const res = await client.POST('/api/user/login/', {
+				body: {
 					username: username.trim(),
 					password: password.trim()
-				})
+				},
+				headers: {
+					'Content-Type': 'application/json'
+				}
 			});
 
-			const data = await res.json();
+			const data = await res.response.json();
 
-			if (res.ok && typeof data.token === 'string') {
+			if (res.response.ok && typeof data.token === 'string') {
 				token.set(data.token);
 				toast.success('Login successful!');
 				setTimeout(() => {

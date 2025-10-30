@@ -33,14 +33,10 @@
 		DropdownMenuItem,
 		DropdownMenuTrigger
 	} from '$lib/components/ui/dropdown-menu';
-	import {
-		NONBLANK_URL,
-		QUEUE_URL,
-		PDF_CONVERT_URL,
-		ALL_USER_ENDPOINT
-	} from '$lib/constants/backend';
+
 	import { goto } from '$app/navigation';
 	import { uuidv4 } from '$lib/functions/uuid4';
+	import { client } from '$lib/client';
 
 	// Svelte 5 runes
 	let files = $state<PDFFile[]>([]);
@@ -128,22 +124,16 @@
 				headers.Authorization = `Bearer ${token.value}`;
 			}
 
-			let url = ALL_USER_ENDPOINT;
-			if (searchTerm) {
-				const params = new URLSearchParams({ name: searchTerm });
-				url += `?${params.toString()}`;
-			}
-
-			const response = await fetch(url, {
-				method: 'GET',
+			const res = await client.GET('/api/users/', {
+				params: searchTerm ? { query: { name: searchTerm } } : {},
 				headers
 			});
 
-			if (!response.ok) {
-				throw new Error(`Failed to fetch users: ${response.status} ${response.statusText}`);
+			if (!res.response.ok) {
+				throw new Error(`Failed to fetch users: ${res.response.status} ${res.response.statusText}`);
 			}
 
-			const userData: APIUser[] = await response.json();
+			const userData: APIUser[] = await res.response.json();
 			users = userData;
 		} catch (error: any) {
 			toast.error('Failed to load users', {
@@ -164,18 +154,16 @@
 		if (token.value) {
 			headers.Authorization = `Bearer ${token.value}`;
 		}
-
-		const response = await fetch(PDF_CONVERT_URL, {
-			method: 'POST',
-			headers,
-			body: formData
+		const res = await client.POST('/api/convert/merge/', {
+			body: formData as any,
+			headers
 		});
 
-		if (!response.ok) {
+		if (!res.response.ok) {
 			throw new Error(`Failed to convert ${file.name} to PDF`);
 		}
 
-		const blob = await response.blob();
+		const blob = await res.response.blob();
 		return new File([blob], file.name.replace(/\.[^/.]+$/, '.pdf'), {
 			type: 'application/pdf'
 		});
@@ -366,23 +354,21 @@
 		}
 
 		try {
-			const res = await fetch(QUEUE_URL, {
-				method: 'POST',
-				headers, // Note: DO NOT set Content-Type — browser sets it with boundary
-				body: formData
+			const res = await client.POST('/api/queue/', {
+				body: formData as any,
+				headers
 			});
-
-			if (res.ok) {
-				const data: QueueUploadResponse = await res.json(); // ✅ Parse JSON response
+			if (res.response.ok) {
+				const data: QueueUploadResponse = await res.response.json(); // ✅ Parse JSON response
 				filesToSubmit.forEach((pdfFile) => {
 					pdfFile.enqueueStatus = 'success';
 				});
 				toast.success(data.message, { duration: 4000 });
 				goto('/transactions');
 			} else {
-				const errorData = await res.json().catch(() => ({}));
+				const errorData = await res.response.json().catch(() => ({}));
 				const errorMsg =
-					errorData?.detail || errorData?.message || `Enqueue failed (${res.status})`;
+					errorData?.detail || errorData?.message || `Enqueue failed (${res.response.status})`;
 				throw new Error(errorMsg);
 			}
 		} catch (error: any) {
@@ -407,17 +393,15 @@
 				headers.Authorization = `Bearer ${token.value}`;
 			}
 
-			const response = await fetch(NONBLANK_URL, {
-				method: 'POST',
-				headers,
-				body: formData
+			const res = await client.POST('/api/convert/nonblank/', {
+				body: formData as any,
+				headers
 			});
-
-			if (!response.ok) {
+			if (!res.response.ok) {
 				throw new Error(`Failed to process ${pdfFile.file.name}`);
 			}
 
-			const blob = await response.blob();
+			const blob = await res.response.blob();
 			const optimizedFile = new File([blob], `cleaned_${pdfFile.file.name}`, {
 				type: 'application/pdf'
 			});

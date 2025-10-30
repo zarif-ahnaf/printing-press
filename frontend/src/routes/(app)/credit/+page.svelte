@@ -17,6 +17,7 @@
 		TableCell
 	} from '$lib/components/ui/table';
 	import { Badge } from '$lib/components/ui/badge';
+	import { client } from '$lib/client';
 
 	// --- Types ---
 	interface BalanceResponse {
@@ -60,11 +61,6 @@
 		{ value: 'charge', label: 'Deduct Funds (Charge)' }
 	];
 
-	const getAuthHeaders = () => ({
-		Authorization: `Bearer ${token.value}`,
-		'Content-Type': 'application/json'
-	});
-
 	function getDisplayName(user: UserItem): string {
 		if (user.first_name || user.last_name) {
 			return `${user.first_name} ${user.last_name}`.trim();
@@ -75,18 +71,16 @@
 	async function fetchUsers(searchTerm: string = '') {
 		isLoadingUsers = true;
 		try {
-			let url = `${API_BASE}/users/`;
-			if (searchTerm) {
-				const params = new URLSearchParams({ name: searchTerm });
-				url += `?${params.toString()}`;
-			}
-
-			const res = await fetch(url, {
-				headers: getAuthHeaders()
+			const res = await client.GET('/api/users/', {
+				params: searchTerm ? { query: { name: searchTerm } } : {},
+				headers: {
+					Authorization: `Bearer ${token.value}`,
+					'Content-Type': 'application/json'
+				}
 			});
 
-			if (!res.ok) throw new Error('Failed to fetch users');
-			users = (await res.json()) as UserItem[];
+			if (!res.response.ok) throw new Error('Failed to fetch users');
+			users = (await res.response.json()) as UserItem[];
 		} catch (err) {
 			const message = (err as Error).message;
 			error = message;
@@ -100,14 +94,23 @@
 	async function fetchBalance() {
 		if (!selectedUser) return;
 		try {
-			const res = await fetch(`${API_BASE}/balance/${selectedUser.username}`, {
-				headers: getAuthHeaders()
+			const res = await client.GET('/api/balance/{username}', {
+				params: {
+					path: {
+						username: selectedUser.username
+					}
+				},
+				headers: {
+					Authorization: `Bearer ${token.value}`,
+					'Content-Type': 'application/json'
+				}
 			});
-			if (!res.ok) {
-				const errData = await res.json().catch(() => ({}));
+
+			if (!res.response.ok) {
+				const errData = await res.response.json().catch(() => ({}));
 				throw new Error(errData.detail || 'Failed to fetch balance');
 			}
-			const data = (await res.json()) as BalanceResponse;
+			const data = (await res.response.json()) as BalanceResponse;
 			balance = data.balance;
 		} catch (err) {
 			const message = (err as Error).message;
@@ -119,14 +122,23 @@
 	async function fetchTransactions() {
 		if (!selectedUser) return;
 		try {
-			const res = await fetch(`${API_BASE}/transactions/${selectedUser.username}`, {
-				headers: getAuthHeaders()
+			const res = await client.GET('/api/transactions/{username}', {
+				params: {
+					path: {
+						username: selectedUser.username
+					}
+				},
+				headers: {
+					Authorization: `Bearer ${token.value}`,
+					'Content-Type': 'application/json'
+				}
 			});
-			if (!res.ok) {
-				const errData = await res.json().catch(() => ({}));
+
+			if (!res.response.ok) {
+				const errData = await res.response.json().catch(() => ({}));
 				throw new Error(errData.detail || 'Failed to fetch transactions');
 			}
-			transactions = (await res.json()) as Transaction[];
+			transactions = (await res.response.json()) as Transaction[];
 		} catch (err) {
 			const message = (err as Error).message;
 			error = message;
@@ -155,7 +167,7 @@
 		error = null;
 
 		try {
-			const endpoint = operationType === 'deposit' ? '/admin/deposit/' : '/charge/';
+			const endpoint = operationType === 'deposit' ? '/api/admin/deposit/' : '/api/charge/';
 			const payload = {
 				amount: amount.toString(),
 				description:
@@ -163,14 +175,16 @@
 				username: selectedUser.username
 			};
 
-			const res = await fetch(`${API_BASE}${endpoint}`, {
-				method: 'POST',
-				headers: getAuthHeaders(),
-				body: JSON.stringify(payload)
+			const res = await client.POST(endpoint, {
+				headers: {
+					Authorization: `Bearer ${token.value}`,
+					'Content-Type': 'application/json'
+				},
+				body: payload
 			});
 
-			if (!res.ok) {
-				const errData = await res.json().catch(() => ({}));
+			if (!res.response.ok) {
+				const errData = await res.response.json().catch(() => ({}));
 				throw new Error(errData.detail || 'Operation failed');
 			}
 

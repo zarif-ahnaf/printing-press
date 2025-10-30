@@ -2,8 +2,8 @@
 	import { onMount } from 'svelte';
 	import { page } from '$app/state';
 	import TransactionList from '$lib/components/TransactionList.svelte';
-	import { BALANCE_URL, TRANSACTIONS_URL } from '$lib/constants/backend';
 	import { token } from '$lib/stores/token.svelte';
+	import { client } from '$lib/client';
 
 	const username = $derived(page.params?.username ?? '');
 
@@ -20,16 +20,6 @@
 		created_at: string;
 	};
 
-	const BALANCE_BY_USER_URL = (user: string) => {
-		if (!user) throw new Error('Username is required');
-		return `${BALANCE_URL}${encodeURIComponent(user)}`;
-	};
-
-	const TRANSACTIONS_BY_USER_URL = (user: string) => {
-		if (!user) throw new Error('Username is required');
-		return `${TRANSACTIONS_URL}${encodeURIComponent(user)}`;
-	};
-
 	onMount(async () => {
 		try {
 			if (!username) {
@@ -38,13 +28,23 @@
 			}
 
 			const [balanceRes, transactionsRes] = await Promise.all([
-				fetch(BALANCE_BY_USER_URL(username), {
+				client.GET('/api/balance/{username}', {
+					params: {
+						path: {
+							username
+						}
+					},
 					headers: {
 						Authorization: `Bearer ${token.value}`,
 						'Content-Type': 'application/json'
 					}
 				}),
-				fetch(TRANSACTIONS_BY_USER_URL(username), {
+				client.GET('/api/transactions/{username}', {
+					params: {
+						path: {
+							username
+						}
+					},
 					headers: {
 						Authorization: `Bearer ${token.value}`,
 						'Content-Type': 'application/json'
@@ -52,28 +52,28 @@
 				})
 			]);
 
-			if (!balanceRes.ok) {
-				if (balanceRes.status === 404) {
+			if (!balanceRes.response.ok) {
+				if (balanceRes.response.status === 404) {
 					error = 'User balance not found';
 				} else {
-					throw new Error(`Balance API: ${balanceRes.status}`);
+					throw new Error(`Balance API: ${balanceRes.response.status}`);
 				}
 				return;
 			}
 
-			if (!transactionsRes.ok) {
-				if (transactionsRes.status === 404) {
+			if (!transactionsRes.response.ok) {
+				if (transactionsRes.response.status === 404) {
 					error = 'User transactions not found';
-				} else if (transactionsRes.status === 403) {
+				} else if (transactionsRes.response.status === 403) {
 					error = 'You do not have permission to view this user’s data';
 				} else {
-					throw new Error(`Transactions API: ${transactionsRes.status}`);
+					throw new Error(`Transactions API: ${transactionsRes.response.status}`);
 				}
 				return;
 			}
 
-			const balanceData = await balanceRes.json();
-			const transactionsData: TransactionResponse[] = await transactionsRes.json();
+			const balanceData = await balanceRes.response.json();
+			const transactionsData: TransactionResponse[] = await transactionsRes.response.json();
 
 			balance = parseFloat(balanceData.balance);
 			transactions = transactionsData.sort(

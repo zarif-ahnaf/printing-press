@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import TransactionList from '$lib/components/TransactionList.svelte';
-	import { BALANCE_URL, TRANSACTIONS_URL } from '$lib/constants/backend';
 	import { token } from '$lib/stores/token.svelte';
+	import { client } from '$lib/client';
 
 	let transactions = $state<TransactionResponse[]>([]);
 	let balance = $state<number | undefined>(undefined);
@@ -20,19 +20,20 @@
 	onMount(async () => {
 		try {
 			const [balanceRes, transactionsRes] = await Promise.all([
-				fetch(BALANCE_URL, {
+				client.GET('/api/balance/', {
 					headers: { Authorization: `Bearer ${token.value}`, 'Content-Type': 'application/json' }
 				}),
-				fetch(TRANSACTIONS_URL, {
+				client.GET('/api/transactions/', {
 					headers: { Authorization: `Bearer ${token.value}`, 'Content-Type': 'application/json' }
 				})
 			]);
 
-			if (!balanceRes.ok) throw new Error(`Balance API: ${balanceRes.status}`);
-			if (!transactionsRes.ok) throw new Error(`Transactions API: ${transactionsRes.status}`);
+			if (!balanceRes.response.ok) throw new Error(`Balance API: ${balanceRes.response.status}`);
+			if (!transactionsRes.response.ok)
+				throw new Error(`Transactions API: ${transactionsRes.response.status}`);
 
-			const balanceData = await balanceRes.json();
-			const transactionsData: TransactionResponse[] = await transactionsRes.json();
+			const balanceData = await balanceRes.response.json();
+			const transactionsData: TransactionResponse[] = await transactionsRes.response.json();
 
 			balance = parseFloat(balanceData.balance);
 			transactions = transactionsData.sort(

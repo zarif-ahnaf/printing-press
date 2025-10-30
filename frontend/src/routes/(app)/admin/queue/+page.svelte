@@ -52,10 +52,10 @@
 		Repeat
 	} from 'lucide-svelte';
 
-	import { CHARGE_ENDPOINT, MERGE_ENDPOINT, QUEUE_URL } from '$lib/constants/backend';
 	import { token } from '$lib/stores/token.svelte';
 	import { createRefCountedCache } from '$lib/cache/createRefCountedCache';
 	import { cn } from '$lib/utils';
+	import { client } from '$lib/client';
 
 	interface QueueItem {
 		id: number;
@@ -148,20 +148,19 @@
 
 		charging = { ...charging, [item.id]: true };
 		try {
-			const res = await fetch(CHARGE_ENDPOINT, {
-				method: 'POST',
+			const res = await client.POST('/api/charge/', {
 				headers: {
 					'Content-Type': 'application/json',
 					Authorization: `Bearer ${token.value}`
 				},
-				body: JSON.stringify({
+				body: {
 					user_id: item.user_id,
 					amount: sheets,
 					description: `Simplex printing: ${item.file.split('/').pop()} (${item.pageCount} pages → ${sheets} sheets)`
-				})
+				}
 			});
-			if (!res.ok) {
-				const err = await res.json();
+			if (!res.response.ok) {
+				const err = await res.response.json();
 				throw new Error(err.detail || 'Charge failed');
 			}
 			return true;
@@ -239,18 +238,17 @@
 					formData.append('files', blob, url.split('/').pop() || 'file.pdf');
 				}
 
-				const mergeRes = await fetch(MERGE_ENDPOINT, {
-					method: 'POST',
-					body: formData,
+				const mergeRes = await client.POST('/api/convert/merge/', {
+					body: formData as any,
 					headers: { Authorization: `Bearer ${token.value}` }
 				});
 
-				if (!mergeRes.ok) {
-					const text = await mergeRes.text();
+				if (!mergeRes.response.ok) {
+					const text = await mergeRes.response.text();
 					throw new Error(`Merge failed: ${text}`);
 				}
 
-				const mergedBlob = await mergeRes.blob();
+				const mergedBlob = await mergeRes.response.blob();
 				blobUrl = URL.createObjectURL(mergedBlob);
 				mergedPdfCache.set(cacheKey, blobUrl);
 				mergedPdfCache.incrementRef(cacheKey);
@@ -298,18 +296,17 @@
 					formData.append('files', blob, url.split('/').pop() || 'file.pdf');
 				}
 
-				const mergeRes = await fetch(MERGE_ENDPOINT, {
-					method: 'POST',
-					body: formData,
+				const mergeRes = await client.POST('/api/convert/merge/', {
+					body: formData as any,
 					headers: { Authorization: `Bearer ${token.value}` }
 				});
 
-				if (!mergeRes.ok) {
-					const text = await mergeRes.text();
+				if (!mergeRes.response.ok) {
+					const text = await mergeRes.response.text();
 					throw new Error(`Merge failed: ${text}`);
 				}
 
-				const mergedBlob = await mergeRes.blob();
+				const mergedBlob = await mergeRes.response.blob();
 				blobUrl = URL.createObjectURL(mergedBlob);
 				mergedPdfCache.set(cacheKey, blobUrl);
 				mergedPdfCache.incrementRef(cacheKey);
@@ -367,11 +364,11 @@
 			try {
 				loading = true;
 				error = null;
-				const res = await fetch(QUEUE_URL, {
+				const res = await client.GET('/api/queue/', {
 					headers: { Authorization: `Bearer ${token.value}` }
 				});
-				if (!res.ok) throw new Error('Failed to fetch queue');
-				const data = await res.json();
+				if (!res.response.ok) throw new Error('Failed to fetch queue');
+				const data = await res.response.json();
 				queue = (data.queue || []).map((item: any) => ({
 					...item,
 					pageCount: item.page_count ?? undefined
@@ -537,15 +534,23 @@
 		confirmingSelected = { ...confirmingSelected, [user]: true };
 		try {
 			for (const item of itemsToConfirm) {
-				const res = await fetch(`${QUEUE_URL}${item.id}/processed`, {
-					method: 'POST',
-					headers: { Authorization: `Bearer ${token.value}`, 'Content-Type': 'application/json' }
+				const res = await client.POST(`/api/queue/{queue_id}/processed`, {
+					params: {
+						path: {
+							queue_id: item.id
+						}
+					},
+					headers: {
+						'Content-Type': 'application/json',
+						Authorization: `Bearer ${token.value}`
+					}
 				});
-				if (!res.ok) {
-					const err = await res.json();
+
+				if (!res.response.ok) {
+					const err = await res.response.json();
 					throw new Error(err.detail || `Confirm failed for ${item.id}`);
 				}
-				const result = await res.json();
+				const result = await res.response.json();
 				if (result.processed) {
 					const userQueue = groupedQueue[user] || [];
 					const idx = userQueue.findIndex((i) => i.id === item.id);
@@ -566,12 +571,20 @@
 		const { id, user } = item;
 		unprocessingItem = { ...unprocessingItem, [id]: true };
 		try {
-			const res = await fetch(`${QUEUE_URL}${id}/processed`, {
-				method: 'DELETE',
-				headers: { Authorization: `Bearer ${token.value}`, 'Content-Type': 'application/json' }
+			const res = await client.DELETE(`/api/queue/{queue_id}/processed`, {
+				params: {
+					path: {
+						queue_id: id
+					}
+				},
+				headers: {
+					'Content-Type': 'application/json',
+					Authorization: `Bearer ${token.value}`
+				}
 			});
-			if (!res.ok) {
-				const err = await res.json();
+
+			if (!res.response.ok) {
+				const err = await res.response.json();
 				throw new Error(err.detail || `Unprocess failed for ${id}`);
 			}
 			const userQueue = groupedQueue[user] || [];
@@ -590,18 +603,22 @@
 		const { id, user } = item;
 		unprocessingItem = { ...unprocessingItem, [id]: true };
 		try {
-			const res = await fetch(`${QUEUE_URL}${id}/processed`, {
-				method: 'POST',
+			const res = await client.POST('/api/queue/{queue_id}/processed', {
 				headers: {
 					Authorization: `Bearer ${token.value}`,
 					'Content-Type': 'application/json'
+				},
+				params: {
+					path: {
+						queue_id: id
+					}
 				}
 			});
-			if (!res.ok) {
-				const err = await res.json();
+			if (!res.response.ok) {
+				const err = await res.response.json();
 				throw new Error(err.detail || `Confirm failed for ${id}`);
 			}
-			const result = await res.json();
+			const result = await res.response.json();
 			if (result.processed) {
 				const userQueue = groupedQueue[user] || [];
 				const idx = userQueue.findIndex((i) => i.id === id);
