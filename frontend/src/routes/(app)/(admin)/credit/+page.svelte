@@ -40,6 +40,18 @@
 		last_name: string;
 	}
 
+	// --- Helper: Safely parse JSON without consuming original body ---
+	async function safeJson(response: Response): Promise<any> {
+		if (!response.bodyUsed && response.headers.get('content-type')?.includes('application/json')) {
+			try {
+				return await response.clone().json();
+			} catch {
+				// JSON parse failed
+			}
+		}
+		return {};
+	}
+
 	// --- State ---
 	let balance = $state<string>('0.00');
 	let transactions = $state<Transaction[]>([]);
@@ -53,8 +65,6 @@
 	let operationType = $state<'deposit' | 'charge'>('deposit');
 	let isLoading = $state<boolean>(false);
 	let error = $state<string | null>(null);
-
-	const API_BASE = 'http://localhost:8000/api';
 
 	const operationOptions = [
 		{ value: 'deposit', label: 'Add Funds (Deposit)' },
@@ -74,13 +84,16 @@
 			const res = await client.GET('/api/users/', {
 				params: searchTerm ? { query: { name: searchTerm } } : {},
 				headers: {
-					Authorization: `Bearer ${token.value}`,
-					'Content-Type': 'application/json'
+					Authorization: `Bearer ${token.value}`
 				}
 			});
 
-			if (!res.response.ok) throw new Error('Failed to fetch users');
-			users = (await res.response.json()) as UserItem[];
+			if (!res.response.ok) {
+				const errData = await safeJson(res.response);
+				throw new Error(errData.detail || 'Failed to fetch users');
+			}
+			const data = await safeJson(res.response);
+			users = data as UserItem[];
 		} catch (err) {
 			const message = (err as Error).message;
 			error = message;
@@ -101,17 +114,16 @@
 					}
 				},
 				headers: {
-					Authorization: `Bearer ${token.value}`,
-					'Content-Type': 'application/json'
+					Authorization: `Bearer ${token.value}`
 				}
 			});
 
 			if (!res.response.ok) {
-				const errData = await res.response.json().catch(() => ({}));
+				const errData = await safeJson(res.response);
 				throw new Error(errData.detail || 'Failed to fetch balance');
 			}
-			const data = (await res.response.json()) as BalanceResponse;
-			balance = data.balance;
+			const data = await safeJson(res.response);
+			balance = (data as BalanceResponse).balance;
 		} catch (err) {
 			const message = (err as Error).message;
 			error = message;
@@ -129,16 +141,16 @@
 					}
 				},
 				headers: {
-					Authorization: `Bearer ${token.value}`,
-					'Content-Type': 'application/json'
+					Authorization: `Bearer ${token.value}`
 				}
 			});
 
 			if (!res.response.ok) {
-				const errData = await res.response.json().catch(() => ({}));
+				const errData = await safeJson(res.response);
 				throw new Error(errData.detail || 'Failed to fetch transactions');
 			}
-			transactions = (await res.response.json()) as Transaction[];
+			const data = await safeJson(res.response);
+			transactions = data as Transaction[];
 		} catch (err) {
 			const message = (err as Error).message;
 			error = message;
@@ -177,14 +189,13 @@
 
 			const res = await client.POST(endpoint, {
 				headers: {
-					Authorization: `Bearer ${token.value}`,
-					'Content-Type': 'application/json'
+					Authorization: `Bearer ${token.value}`
 				},
 				body: payload
 			});
 
 			if (!res.response.ok) {
-				const errData = await res.response.json().catch(() => ({}));
+				const errData = await safeJson(res.response);
 				throw new Error(errData.detail || 'Operation failed');
 			}
 
@@ -255,7 +266,7 @@
 			</div>
 		</div>
 
-		<!-- User Search (inspired by your reference) -->
+		<!-- User Search -->
 		<Card class="mb-6">
 			<CardHeader>
 				<CardTitle class="flex items-center gap-2">
