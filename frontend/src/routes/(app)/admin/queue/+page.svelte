@@ -47,7 +47,7 @@
 		ExternalLink,
 		ChevronRight,
 		ChevronDown,
-		CheckCircle,
+		CircleCheckBig,
 		CreditCard,
 		Repeat
 	} from 'lucide-svelte';
@@ -756,7 +756,7 @@
 									{#if confirmingSelected[user]}
 										<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Confirming...
 									{:else}
-										<CheckCircle class="mr-2 h-4 w-4" /> Confirm Selected
+										<CircleCheckBig class="mr-2 h-4 w-4" /> Confirm Selected
 									{/if}
 								</Button>
 
@@ -979,7 +979,7 @@
 																	{#if unprocessingItem[item.id]}
 																		<LoaderCircle class="h-4 w-4 animate-spin" />
 																	{:else}
-																		<CheckCircle class="h-4 w-4" />
+																		<CircleCheckBig class="h-4 w-4" />
 																	{/if}
 																</Button>
 															</TooltipTrigger>
@@ -1075,7 +1075,7 @@
 																		<LoaderCircle class="mr-2 h-4 w-4 animate-spin" />
 																		Confirming...
 																	{:else}
-																		<CheckCircle class="mr-2 h-4 w-4" />
+																		<CircleCheckBig class="mr-2 h-4 w-4" />
 																		Confirm
 																	{/if}
 																</DropdownMenuItem>
