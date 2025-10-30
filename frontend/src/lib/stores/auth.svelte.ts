@@ -16,21 +16,24 @@ $effect.root(() => {
 		if (token.value) {
 			fetchState = 'fetching';
 			client
-				.GET('/api/user/')
-				.then(async (_res) => {
-					const res = _res.response;
-					if (res.ok) {
+				.GET('/api/user/', {
+					headers: {
+						Authorization: `Bearer ${token.value}`
+					}
+				})
+				.then((res) => {
+					if (res.data) {
+						// Success: OpenAPI defined 200 response → use res.data
 						isLoggedInState = true;
-						const data = await res.json();
-						if (data) {
-							isAdminUser = Boolean(data.is_superuser);
-							firstName = data.first_name ?? null;
-							lastName = data.last_name ?? null;
-							email = data.email ?? null;
-							username = data.username ?? null;
-						}
+						isAdminUser = Boolean(res.data.is_superuser);
+						firstName = res.data.first_name ?? null;
+						lastName = res.data.last_name ?? null;
+						email = res.data.email ?? null;
+						username = res.data.username ?? null;
 						fetchState = 'fetched';
 					} else {
+						// Either 4xx/5xx or 2xx not defined in OpenAPI
+						// Treat as unauthenticated
 						isLoggedInState = false;
 						isAdminUser = null;
 						firstName = lastName = email = username = null;
@@ -45,7 +48,6 @@ $effect.root(() => {
 					fetchState = 'not_fetched';
 				});
 		} else {
-			// Reset state when token is cleared
 			isLoggedInState = false;
 			isAdminUser = null;
 			firstName = lastName = email = username = null;

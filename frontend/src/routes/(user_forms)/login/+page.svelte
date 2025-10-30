@@ -49,22 +49,25 @@
 				body: {
 					username: username.trim(),
 					password: password.trim()
-				},
-				headers: {
-					'Content-Type': 'application/json'
 				}
 			});
 
-			const data = await res.response.json();
-
-			if (res.response.ok && typeof data.token === 'string') {
-				token.set(data.token);
+			if (res.response.ok && res.data?.token) {
+				token.set(res.data.token);
 				toast.success('Login successful!');
 				setTimeout(() => {
 					window.location.href = next;
 				}, 1000);
 			} else {
-				toast.error('Invalid username or password.');
+				// Parse error manually since OpenAPI doesn't define it
+				let errorMessage = 'Invalid username or password.';
+				try {
+					const errorData = await res.response.json();
+					errorMessage = errorData.detail || errorData.message || errorMessage;
+				} catch {
+					// If not JSON, keep default message
+				}
+				toast.error(String(errorMessage));
 			}
 		} catch (err) {
 			console.error('Login network error:', err);
@@ -73,7 +76,6 @@
 			loading = false;
 		}
 	}
-
 	function togglePasswordVisibility() {
 		showPassword = !showPassword;
 	}

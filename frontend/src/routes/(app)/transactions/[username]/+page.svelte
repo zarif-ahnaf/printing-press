@@ -4,7 +4,7 @@
 	import TransactionList from '$lib/components/TransactionList.svelte';
 	import { token } from '$lib/stores/token.svelte';
 	import { client } from '$lib/client';
-
+	import { toast } from 'svelte-sonner';
 	const username = $derived(page.params?.username ?? '');
 
 	let transactions = $state<TransactionResponse[]>([]);
@@ -20,6 +20,18 @@
 		created_at: string;
 	};
 
+	// --- Helper: Safely parse JSON without consuming original body ---
+	async function safeJson(response: Response): Promise<any> {
+		if (!response.bodyUsed && response.headers.get('content-type')?.includes('application/json')) {
+			try {
+				return await response.clone().json();
+			} catch {
+				toast.error('Failed to parse server response');
+			}
+		}
+		return {};
+	}
+
 	onMount(async () => {
 		try {
 			if (!username) {
@@ -30,24 +42,18 @@
 			const [balanceRes, transactionsRes] = await Promise.all([
 				client.GET('/api/balance/{username}', {
 					params: {
-						path: {
-							username
-						}
+						path: { username }
 					},
 					headers: {
-						Authorization: `Bearer ${token.value}`,
-						'Content-Type': 'application/json'
+						Authorization: `Bearer ${token.value}`
 					}
 				}),
 				client.GET('/api/transactions/{username}', {
 					params: {
-						path: {
-							username
-						}
+						path: { username }
 					},
 					headers: {
-						Authorization: `Bearer ${token.value}`,
-						'Content-Type': 'application/json'
+						Authorization: `Bearer ${token.value}`
 					}
 				})
 			]);
@@ -56,7 +62,8 @@
 				if (balanceRes.response.status === 404) {
 					error = 'User balance not found';
 				} else {
-					throw new Error(`Balance API: ${balanceRes.response.status}`);
+					const errData = await safeJson(balanceRes.response);
+					throw new Error(errData.detail || `Balance API: ${balanceRes.response.status}`);
 				}
 				return;
 			}
@@ -67,13 +74,14 @@
 				} else if (transactionsRes.response.status === 403) {
 					error = 'You do not have permission to view this user’s data';
 				} else {
-					throw new Error(`Transactions API: ${transactionsRes.response.status}`);
+					const errData = await safeJson(transactionsRes.response);
+					throw new Error(errData.detail || `Transactions API: ${transactionsRes.response.status}`);
 				}
 				return;
 			}
 
-			const balanceData = await balanceRes.response.json();
-			const transactionsData: TransactionResponse[] = await transactionsRes.response.json();
+			const balanceData = await safeJson(balanceRes.response);
+			const transactionsData = (await safeJson(transactionsRes.response)) as TransactionResponse[];
 
 			balance = parseFloat(balanceData.balance);
 			transactions = transactionsData.sort(

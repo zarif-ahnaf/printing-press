@@ -91,6 +91,19 @@
 	const mergedPdfCache = createRefCountedCache<string>();
 	const fetchedPdfCache = createRefCountedCache<string>();
 
+	// --- Helper: Safely extract error message without consuming body ---
+	async function getErrorMessage(response: Response): Promise<string> {
+		if (response.headers.get('content-type')?.includes('application/json')) {
+			try {
+				const body = await response.clone().json();
+				return body.detail || body.message || 'An error occurred';
+			} catch {
+				// JSON parse failed or empty
+			}
+		}
+		return response.statusText || 'An error occurred';
+	}
+
 	function hashFiles(files: string[]): string {
 		return files.slice().sort().join('|');
 	}
@@ -150,7 +163,6 @@
 		try {
 			const res = await client.POST('/api/charge/', {
 				headers: {
-					'Content-Type': 'application/json',
 					Authorization: `Bearer ${token.value}`
 				},
 				body: {
@@ -160,8 +172,8 @@
 				}
 			});
 			if (!res.response.ok) {
-				const err = await res.response.json();
-				throw new Error(err.detail || 'Charge failed');
+				const message = await getErrorMessage(res.response);
+				throw new Error(message);
 			}
 			return true;
 		} catch (err) {
@@ -213,7 +225,7 @@
 		const files = Object.entries(selectedItems[user] || {})
 			.filter(([, checked]) => checked)
 			.map(([file]) => file);
-		if (files.length < 2) return; // Safety: should not happen due to UI guard
+		if (files.length < 2) return;
 
 		const cacheKey = hashFiles(files);
 		let blobUrl: string;
@@ -244,8 +256,8 @@
 				});
 
 				if (!mergeRes.response.ok) {
-					const text = await mergeRes.response.text();
-					throw new Error(`Merge failed: ${text}`);
+					const message = await getErrorMessage(mergeRes.response);
+					throw new Error(`Merge failed: ${message}`);
 				}
 
 				const mergedBlob = await mergeRes.response.blob();
@@ -272,7 +284,7 @@
 		const filesToMerge = userItems
 			.filter((item) => !item.hidden && !item.isMerged)
 			.map((item) => item.file);
-		if (filesToMerge.length < 2) return; // Cannot merge <2 files
+		if (filesToMerge.length < 2) return;
 
 		const cacheKey = hashFiles(filesToMerge);
 		let blobUrl: string;
@@ -302,8 +314,8 @@
 				});
 
 				if (!mergeRes.response.ok) {
-					const text = await mergeRes.response.text();
-					throw new Error(`Merge failed: ${text}`);
+					const message = await getErrorMessage(mergeRes.response);
+					throw new Error(`Merge failed: ${message}`);
 				}
 
 				const mergedBlob = await mergeRes.response.blob();
@@ -367,8 +379,11 @@
 				const res = await client.GET('/api/queue/', {
 					headers: { Authorization: `Bearer ${token.value}` }
 				});
-				if (!res.response.ok) throw new Error('Failed to fetch queue');
-				const data = await res.response.json();
+				if (!res.response.ok) {
+					const message = await getErrorMessage(res.response);
+					throw new Error(message);
+				}
+				const data = await res.response.json(); // OK: body not consumed yet (no 200 schema likely)
 				queue = (data.queue || []).map((item: any) => ({
 					...item,
 					pageCount: item.page_count ?? undefined
@@ -541,22 +556,19 @@
 						}
 					},
 					headers: {
-						'Content-Type': 'application/json',
 						Authorization: `Bearer ${token.value}`
 					}
 				});
 
 				if (!res.response.ok) {
-					const err = await res.response.json();
-					throw new Error(err.detail || `Confirm failed for ${item.id}`);
+					const message = await getErrorMessage(res.response);
+					throw new Error(message);
 				}
-				const result = await res.response.json();
-				if (result.processed) {
-					const userQueue = groupedQueue[user] || [];
-					const idx = userQueue.findIndex((i) => i.id === item.id);
-					if (idx !== -1) userQueue[idx] = { ...userQueue[idx], processed: true };
-					groupedQueue = { ...groupedQueue, [user]: userQueue };
-				}
+				// No need to parse body again — assume success if 2xx
+				const userQueue = groupedQueue[user] || [];
+				const idx = userQueue.findIndex((i) => i.id === item.id);
+				if (idx !== -1) userQueue[idx] = { ...userQueue[idx], processed: true };
+				groupedQueue = { ...groupedQueue, [user]: userQueue };
 			}
 			selectedItems = { ...selectedItems, [user]: {} };
 		} catch (err) {
@@ -578,14 +590,13 @@
 					}
 				},
 				headers: {
-					'Content-Type': 'application/json',
 					Authorization: `Bearer ${token.value}`
 				}
 			});
 
 			if (!res.response.ok) {
-				const err = await res.response.json();
-				throw new Error(err.detail || `Unprocess failed for ${id}`);
+				const message = await getErrorMessage(res.response);
+				throw new Error(message);
 			}
 			const userQueue = groupedQueue[user] || [];
 			const idx = userQueue.findIndex((i) => i.id === id);
@@ -605,8 +616,7 @@
 		try {
 			const res = await client.POST('/api/queue/{queue_id}/processed', {
 				headers: {
-					Authorization: `Bearer ${token.value}`,
-					'Content-Type': 'application/json'
+					Authorization: `Bearer ${token.value}`
 				},
 				params: {
 					path: {
@@ -615,16 +625,13 @@
 				}
 			});
 			if (!res.response.ok) {
-				const err = await res.response.json();
-				throw new Error(err.detail || `Confirm failed for ${id}`);
+				const message = await getErrorMessage(res.response);
+				throw new Error(message);
 			}
-			const result = await res.response.json();
-			if (result.processed) {
-				const userQueue = groupedQueue[user] || [];
-				const idx = userQueue.findIndex((i) => i.id === id);
-				if (idx !== -1) userQueue[idx] = { ...userQueue[idx], processed: true };
-				groupedQueue = { ...groupedQueue, [user]: userQueue };
-			}
+			const userQueue = groupedQueue[user] || [];
+			const idx = userQueue.findIndex((i) => i.id === id);
+			if (idx !== -1) userQueue[idx] = { ...userQueue[idx], processed: true };
+			groupedQueue = { ...groupedQueue, [user]: userQueue };
 		} catch (err) {
 			error = err instanceof Error ? `Confirm error: ${err.message}` : 'Confirm failed';
 		} finally {
@@ -709,7 +716,7 @@
 								</h2>
 							</div>
 							<div class="flex flex-wrap gap-2">
-								<!-- Unified Merge Button: only shown if ≥2 mergeable items exist -->
+								<!-- Unified Merge Button -->
 								{#if items.filter((i) => !i.hidden && !i.isMerged).length >= 2}
 									{#if selectedItems[user]}
 										{#if Object.values(selectedItems[user]).filter(Boolean).length >= 2}
@@ -761,7 +768,6 @@
 									{/if}
 								{/if}
 
-								<!-- Confirm Selected -->
 								<Button
 									variant="outline"
 									size="sm"
@@ -902,9 +908,7 @@
 												{/if}
 											</TableCell>
 
-											<!-- Responsive Actions Cell -->
 											<TableCell class="text-right">
-												<!-- Desktop -->
 												<div class="hidden justify-end gap-2 md:flex">
 													<div class="flex rounded-md border border-input shadow-sm">
 														<Tooltip>
@@ -1020,7 +1024,6 @@
 													{/if}
 												</div>
 
-												<!-- Mobile/Medium -->
 												<div class="md:hidden">
 													<DropdownMenu>
 														<DropdownMenuTrigger>
@@ -1113,7 +1116,6 @@
 											</TableCell>
 										</TableRow>
 
-										<!-- Expanded originals -->
 										{#if item.isMerged && item.mergedFrom && item.mergedId && expandedMergedItems[item.mergedId]}
 											{#each item.mergedFrom as originalFile}
 												{#if queue.find((q) => q.file === originalFile && q.user === item.user)}

@@ -86,6 +86,18 @@
 		previewUrl: string;
 	}
 
+	// --- SAFE JSON HELPER ---
+	async function safeJson(response: Response): Promise<any> {
+		if (!response.bodyUsed && response.headers.get('content-type')?.includes('application/json')) {
+			try {
+				return await response.clone().json();
+			} catch {
+				// JSON parse failed
+			}
+		}
+		return {};
+	}
+
 	function formatFileSize(bytes: number): string {
 		if (bytes === 0) return '0 Bytes';
 		const k = 1024;
@@ -130,11 +142,12 @@
 			});
 
 			if (!res.response.ok) {
-				throw new Error(`Failed to fetch users: ${res.response.status} ${res.response.statusText}`);
+				const errData = await safeJson(res.response);
+				throw new Error(errData.detail || `Failed to fetch users: ${res.response.status}`);
 			}
 
-			const userData: APIUser[] = await res.response.json();
-			users = userData;
+			const userData = await safeJson(res.response);
+			users = userData as APIUser[];
 		} catch (error: any) {
 			toast.error('Failed to load users', {
 				description: error.message || 'An unknown error occurred',
@@ -160,7 +173,8 @@
 		});
 
 		if (!res.response.ok) {
-			throw new Error(`Failed to convert ${file.name} to PDF`);
+			const errData = await safeJson(res.response);
+			throw new Error(errData.detail || `Failed to convert ${file.name} to PDF`);
 		}
 
 		const blob = await res.response.blob();
@@ -359,14 +373,14 @@
 				headers
 			});
 			if (res.response.ok) {
-				const data: QueueUploadResponse = await res.response.json(); // ✅ Parse JSON response
+				const data = (await safeJson(res.response)) as QueueUploadResponse;
 				filesToSubmit.forEach((pdfFile) => {
 					pdfFile.enqueueStatus = 'success';
 				});
 				toast.success(data.message, { duration: 4000 });
 				goto('/transactions');
 			} else {
-				const errorData = await res.response.json().catch(() => ({}));
+				const errorData = await safeJson(res.response);
 				const errorMsg =
 					errorData?.detail || errorData?.message || `Enqueue failed (${res.response.status})`;
 				throw new Error(errorMsg);
@@ -380,6 +394,7 @@
 			isSubmitting = false;
 		}
 	}
+
 	async function optimizeFile(pdfFile: PDFFile) {
 		try {
 			pdfFile.isOptimizing = true;
@@ -398,7 +413,8 @@
 				headers
 			});
 			if (!res.response.ok) {
-				throw new Error(`Failed to process ${pdfFile.file.name}`);
+				const errData = await safeJson(res.response);
+				throw new Error(errData.detail || `Failed to process ${pdfFile.file.name}`);
 			}
 
 			const blob = await res.response.blob();

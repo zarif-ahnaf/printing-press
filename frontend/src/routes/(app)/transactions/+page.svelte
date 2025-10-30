@@ -3,6 +3,7 @@
 	import TransactionList from '$lib/components/TransactionList.svelte';
 	import { token } from '$lib/stores/token.svelte';
 	import { client } from '$lib/client';
+	import { toast } from 'svelte-sonner';
 
 	let transactions = $state<TransactionResponse[]>([]);
 	let balance = $state<number | undefined>(undefined);
@@ -17,23 +18,41 @@
 		created_at: string;
 	};
 
+	// --- Helper: Safely parse JSON without consuming original body ---
+	async function safeJson(response: Response): Promise<any> {
+		if (!response.bodyUsed && response.headers.get('content-type')?.includes('application/json')) {
+			try {
+				return await response.clone().json();
+			} catch {
+				toast.error('Failed to parse JSON response');
+			}
+		}
+		return {};
+	}
+
 	onMount(async () => {
 		try {
 			const [balanceRes, transactionsRes] = await Promise.all([
 				client.GET('/api/balance/', {
-					headers: { Authorization: `Bearer ${token.value}`, 'Content-Type': 'application/json' }
+					headers: { Authorization: `Bearer ${token.value}` }
 				}),
 				client.GET('/api/transactions/', {
-					headers: { Authorization: `Bearer ${token.value}`, 'Content-Type': 'application/json' }
+					headers: { Authorization: `Bearer ${token.value}` }
 				})
 			]);
 
-			if (!balanceRes.response.ok) throw new Error(`Balance API: ${balanceRes.response.status}`);
-			if (!transactionsRes.response.ok)
-				throw new Error(`Transactions API: ${transactionsRes.response.status}`);
+			if (!balanceRes.response.ok) {
+				const errData = await safeJson(balanceRes.response);
+				throw new Error(errData.detail || `Balance API: ${balanceRes.response.status}`);
+			}
 
-			const balanceData = await balanceRes.response.json();
-			const transactionsData: TransactionResponse[] = await transactionsRes.response.json();
+			if (!transactionsRes.response.ok) {
+				const errData = await safeJson(transactionsRes.response);
+				throw new Error(errData.detail || `Transactions API: ${transactionsRes.response.status}`);
+			}
+
+			const balanceData = await safeJson(balanceRes.response);
+			const transactionsData = (await safeJson(transactionsRes.response)) as TransactionResponse[];
 
 			balance = parseFloat(balanceData.balance);
 			transactions = transactionsData.sort(
