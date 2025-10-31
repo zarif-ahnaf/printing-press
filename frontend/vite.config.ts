@@ -9,20 +9,14 @@ export default defineConfig({
 		terserOptions: {
 			keep_classnames: false,
 			keep_fnames: false,
-			mangle: {
-				toplevel: true,
-				eval: true,
-				module: true,
-				safari10: false
-			},
 			output: {
-				ecma: 2020,
+				ecma: 5,
 				comments: false, // Remove all comments
 				beautify: false // Ensure minified output
 			}
 		},
-		target: 'esnext',
-		cssTarget: 'esnext',
+		target: 'es6',
+		cssTarget: 'es6',
 		chunkSizeWarningLimit: 2048,
 		emptyOutDir: true
 	}
