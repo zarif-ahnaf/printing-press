@@ -32,3 +32,8 @@ class ProcessStatusResponse(Schema):
     id: int
     processed: bool
     message: str
+
+
+class DeleteQueueResponse(Schema):
+    id: int
+    message: str

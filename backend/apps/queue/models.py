@@ -9,6 +9,14 @@ class Queue(models.Model):
     processed = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    print_mode = models.CharField(
+        max_length=20,
+        choices=[
+            ("single-sided", "Single Sided"),
+            ("double-sided", "Double Sided"),
+        ],
+        default="single-sided",
+    )
 
     page_count = models.PositiveBigIntegerField(null=True, blank=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE)
