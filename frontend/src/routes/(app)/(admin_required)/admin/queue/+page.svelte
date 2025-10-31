@@ -845,6 +845,8 @@
 															<TooltipContent>Simplex (1 taka per sheet)</TooltipContent>
 														</Tooltip>
 													</div>
+												{:else if item.isMerged}
+													<span class="text-sm text-muted-foreground">Simplex</span>
 												{:else}
 													<span class="text-sm text-muted-foreground">
 														{itemPrintMode[item.id] === 'simplex' ? 'Simplex' : 'Duplex'}

@@ -1,6 +1,7 @@
 import createClient from 'openapi-fetch';
 import type { paths } from './backend';
+import { BACKEND_URL } from '$lib/constants/backend';
 
-const client = createClient<paths>({ baseUrl: 'http://127.0.0.1:8000', headers: {} });
+const client = createClient<paths>({ baseUrl: BACKEND_URL, headers: {} });
 
 export { client };

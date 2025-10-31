@@ -29,6 +29,7 @@ def list_queue(request: HttpRequest):
             print_mode=item.print_mode,
             user=item.user.username,
             user_id=item.user.pk,
+            
             page_count=item.page_count,
         )
         for item in queryset

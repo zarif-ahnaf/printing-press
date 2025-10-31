@@ -8,3 +8,4 @@ const API_URL = `${BACKEND_URL}/api`;
 export var PDF_CONVERT_URL = `${API_URL}/convert/pdf/`;
 export var MERGE_ENDPOINT = `${API_URL}/convert/merge/`;
 export var NONBLANK_URL = `${API_URL}/convert/nonblank/`;
+export { BACKEND_URL };

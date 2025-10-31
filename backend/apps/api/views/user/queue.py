@@ -29,6 +29,7 @@ def list_queue_by_user(
             user=item.user.username,
             user_id=item.user.pk,
             page_count=item.page_count,
+            print_mode=item.print_mode,
         )
         for item in queryset
     ]
