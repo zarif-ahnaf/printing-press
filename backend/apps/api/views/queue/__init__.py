@@ -9,18 +9,20 @@ from ninja.files import UploadedFile
 
 from apps.queue.models import Queue
 
-from ..auth import AuthBearer
-from ..decorators import login_required
-from ..http import HttpRequest
-from ..schemas.queue import (
-    DeleteQueueResponse,
+from ...auth import AuthBearer
+from ...decorators import login_required
+from ...http import HttpRequest
+from ...schemas.queue import (
+    ChangePrintModeRequest,
+    ChangeProcessStatusResponse,
     ProcessStatusResponse,
+    QueueDeleteResponse,
     QueueFileResponse,
     QueueFileUpload,
     QueueListResponse,
     QueueUploadResponse,
 )
-from ..utils.pdf import count_pdf_pages
+from ...utils.pdf import count_pdf_pages
 
 router = Router(tags=["Queue"])
 
@@ -135,10 +137,27 @@ def list_queue(request: HttpRequest):
     return QueueListResponse(queue=items)
 
 
+@router.post("{queue_id}/print-mode", auth=AuthBearer())
+def change_page_mode(
+    request: HttpRequest, payload: ChangePrintModeRequest, queue_id: int
+):
+    queue_item = get_object_or_404(Queue, id=queue_id)
+    current_user = request.auth
+    if queue_item.user != current_user and not current_user.is_staff:
+        raise HttpError(403, "You cannot modify this queue item.")
+    old_mode = queue_item.print_mode
+    queue_item.print_mode = payload.page_type
+    queue_item.save()
+    return ChangeProcessStatusResponse(
+        id=queue_item.pk,
+        message=f"Print mode updated from {old_mode} to {queue_item.print_mode}",
+    )
+
+
 @router.delete(
-    "delete/{queue_id}/",
+    "{queue_id}/delete",
     auth=AuthBearer(),
-    response=DeleteQueueResponse,
+    response=QueueDeleteResponse,
     summary="Mark file as unprocessed",
 )
 def remove_queue_file(
@@ -151,10 +170,12 @@ def remove_queue_file(
     if queue_item.user != current_user and not current_user.is_staff:
         raise HttpError(403, "You cannot modify this queue item.")
 
+    deleted_id = queue_item.pk
+
     queue_item.delete()
 
-    return DeleteQueueResponse(
-        id=queue_item.pk,
+    return QueueDeleteResponse(
+        id=deleted_id,
         message=f"{queue_item.pk} has been deleted successfully.",
     )
 

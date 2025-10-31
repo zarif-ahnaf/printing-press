@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Literal, Optional
 
 from ninja import Schema
 
@@ -34,6 +34,15 @@ class ProcessStatusResponse(Schema):
     message: str
 
 
-class DeleteQueueResponse(Schema):
+class QueueDeleteResponse(Schema):
+    id: int
+    message: str
+
+
+class ChangePrintModeRequest(Schema):
+    page_type: Literal["single-sided", "double-sided"]
+
+
+class ChangeProcessStatusResponse(Schema):
     id: int
     message: str
