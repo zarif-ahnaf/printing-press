@@ -17,6 +17,7 @@
 		TableCell
 	} from '$lib/components/ui/table';
 	import { Badge } from '$lib/components/ui/badge';
+	import { client } from '$lib/client';
 
 	// --- Types ---
 	interface BalanceResponse {
@@ -25,7 +26,7 @@
 
 	interface Transaction {
 		id: number;
-		transaction_type: 'deposit' | 'charge';
+		transaction_type: string;
 		amount: string;
 		description: string;
 		created_at: string;
@@ -35,8 +36,8 @@
 		id: number;
 		username: string;
 		email: string;
-		first_name: string;
-		last_name: string;
+		first_name?: string | null | undefined;
+		last_name?: string | null | undefined;
 	}
 
 	// --- State ---
@@ -52,8 +53,6 @@
 	let operationType = $state<'deposit' | 'charge'>('deposit');
 	let isLoading = $state<boolean>(false);
 	let error = $state<string | null>(null);
-
-	const API_BASE = 'http://localhost:8000/api';
 
 	const operationOptions = [
 		{ value: 'deposit', label: 'Add Funds (Deposit)' },
@@ -75,18 +74,19 @@
 	async function fetchUsers(searchTerm: string = '') {
 		isLoadingUsers = true;
 		try {
-			let url = `${API_BASE}/users/`;
-			if (searchTerm) {
-				const params = new URLSearchParams({ name: searchTerm });
-				url += `?${params.toString()}`;
-			}
-
-			const res = await fetch(url, {
-				headers: getAuthHeaders()
+			const { data, error } = await client.GET('/api/users/', {
+				headers: {
+					Authorization: `Bearer ${token.value}`
+				},
+				params: {
+					query: {
+						name: searchTerm || undefined
+					}
+				}
 			});
 
-			if (!res.ok) throw new Error('Failed to fetch users');
-			users = (await res.json()) as UserItem[];
+			if (error) throw new Error('Failed to fetch users');
+			users = data;
 		} catch (err) {
 			const message = (err as Error).message;
 			error = message;
@@ -100,14 +100,20 @@
 	async function fetchBalance() {
 		if (!selectedUser) return;
 		try {
-			const res = await fetch(`${API_BASE}/balance/${selectedUser.username}`, {
-				headers: getAuthHeaders()
+			const { data, error } = await client.GET('/api/admin/balance/{username}', {
+				params: {
+					path: {
+						username: selectedUser.username
+					}
+				},
+				headers: {
+					Authorization: `Bearer ${token.value}`
+				}
 			});
-			if (!res.ok) {
-				const errData = await res.json().catch(() => ({}));
-				throw new Error(errData.detail || 'Failed to fetch balance');
+
+			if (error) {
+				throw new Error(error || 'Failed to fetch balance');
 			}
-			const data = (await res.json()) as BalanceResponse;
 			balance = data.balance;
 		} catch (err) {
 			const message = (err as Error).message;
@@ -119,14 +125,21 @@
 	async function fetchTransactions() {
 		if (!selectedUser) return;
 		try {
-			const res = await fetch(`${API_BASE}/transactions/${selectedUser.username}`, {
-				headers: getAuthHeaders()
+			const { data, error } = await client.GET('/api/admin/transactions/{username}', {
+				params: {
+					path: {
+						username: selectedUser.username
+					}
+				},
+				headers: {
+					Authorization: `Bearer ${token.value}`
+				}
 			});
-			if (!res.ok) {
-				const errData = await res.json().catch(() => ({}));
-				throw new Error(errData.detail || 'Failed to fetch transactions');
+
+			if (error) {
+				throw new Error(error || 'Failed to fetch transactions');
 			}
-			transactions = (await res.json()) as Transaction[];
+			transactions = data ?? [];
 		} catch (err) {
 			const message = (err as Error).message;
 			error = message;
@@ -155,7 +168,7 @@
 		error = null;
 
 		try {
-			const endpoint = operationType === 'deposit' ? '/admin/deposit/' : '/charge/';
+			const endpoint = operationType === 'deposit' ? '/api/admin/deposit/' : '/api/charge/';
 			const payload = {
 				amount: amount.toString(),
 				description:
@@ -163,15 +176,35 @@
 				username: selectedUser.username
 			};
 
-			const res = await fetch(`${API_BASE}${endpoint}`, {
-				method: 'POST',
-				headers: getAuthHeaders(),
-				body: JSON.stringify(payload)
+			const { data, error } = await client.POST(endpoint, {
+				headers: {
+					Authorization: `Bearer ${token.value}`,
+					'Content-Type': 'application/json'
+				},
+				body: payload
 			});
 
-			if (!res.ok) {
-				const errData = await res.json().catch(() => ({}));
-				throw new Error(errData.detail || 'Operation failed');
+			if (error) {
+				// Normalize various error shapes into a string message for Error constructor
+				const key = Object.keys(error)[0];
+				const err = (error as any)[key];
+				let errMsg: string;
+
+				if (typeof err === 'string') {
+					errMsg = err;
+				} else if (Array.isArray(err)) {
+					errMsg = err.join(', ');
+				} else if (err && typeof err === 'object') {
+					try {
+						errMsg = JSON.stringify(err);
+					} catch {
+						errMsg = String(err);
+					}
+				} else {
+					errMsg = String(err);
+				}
+
+				throw new Error(errMsg || 'Operation failed');
 			}
 
 			toast.success(

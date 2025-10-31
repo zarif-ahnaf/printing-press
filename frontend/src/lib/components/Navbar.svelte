@@ -34,7 +34,7 @@
 	<nav class="sticky top-0 z-50 w-full bg-background shadow-sm">
 		<div class="mx-auto px-4 sm:px-6 lg:px-8">
 			<div class="flex h-16 items-center justify-between">
-				<div class="flex-shrink-0">
+				<div class="shrink-0">
 					<a href="/" class="text-xl font-bold text-foreground">Printing Press</a>
 				</div>
 

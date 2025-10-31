@@ -34,6 +34,7 @@
 		DropdownMenuSeparator,
 		DropdownMenuTrigger
 	} from '$lib/components/ui/dropdown-menu';
+	import { Skeleton } from '$lib/components/ui/skeleton';
 
 	// Lucide Icons
 	import {
@@ -275,7 +276,7 @@
 		<div class="flex flex-wrap items-center justify-between gap-4">
 			<h1 class="text-3xl font-bold tracking-tight">
 				{#if loading}
-					<span class="h-8 w-48 animate-pulse rounded bg-muted"></span>
+					<Skeleton class="h-8 w-48" />
 				{:else if currentUser}
 					PDF Processing Queue
 					<span class="ml-2 text-sm font-normal text-muted-foreground">
@@ -284,7 +285,7 @@
 					</span>
 				{/if}
 			</h1>
-			<Button variant="outline" size="sm" onclick={goBack}>
+			<Button variant="outline" size="sm" href="./upload">
 				<ArrowLeft class="mr-2 h-4 w-4" />
 				Back to Upload
 			</Button>
@@ -295,30 +296,47 @@
 		{/if}
 
 		{#if loading}
-			<div class="space-y-4">
-				{#each { length: 3 } as _, i}
-					<div class="animate-pulse rounded-lg border p-4">
-						<div class="grid grid-cols-12 gap-4">
-							<div class="col-span-4">
-								<div class="h-5 w-3/4 rounded bg-muted"></div>
-								<div class="mt-1 h-4 w-1/3 rounded bg-muted"></div>
-							</div>
-							<div class="col-span-2">
-								<div class="h-5 w-16 rounded bg-muted"></div>
-							</div>
-							<div class="col-span-3">
-								<div class="h-5 w-32 rounded bg-muted"></div>
-							</div>
-							<div class="col-span-3 flex justify-end">
-								<div class="flex gap-2">
-									<div class="h-8 w-8 rounded bg-muted"></div>
-									<div class="h-8 w-8 rounded bg-muted"></div>
-									<div class="h-8 w-8 rounded bg-muted"></div>
-								</div>
-							</div>
-						</div>
-					</div>
-				{/each}
+			<div class="overflow-hidden rounded-lg border">
+				<Table>
+					<TableHeader>
+						<TableRow>
+							<TableHead>File</TableHead>
+							<TableHead>Status</TableHead>
+							<TableHead>Created</TableHead>
+							<TableHead>Print Mode</TableHead>
+							<TableHead class="text-right">Actions</TableHead>
+						</TableRow>
+					</TableHeader>
+					<TableBody>
+						{#each { length: 3 } as _, i}
+							<TableRow>
+								<TableCell>
+									<Skeleton class="h-5 w-3/4" />
+									<Skeleton class="mt-1 h-4 w-1/3" />
+								</TableCell>
+								<TableCell>
+									<Skeleton class="h-5 w-16" />
+								</TableCell>
+								<TableCell>
+									<Skeleton class="h-5 w-32" />
+								</TableCell>
+								<TableCell>
+									<div class="flex items-center gap-2">
+										<Skeleton class="h-8 w-8 rounded" />
+										<Skeleton class="h-8 w-8 rounded" />
+									</div>
+								</TableCell>
+								<TableCell class="text-right">
+									<div class="flex justify-end gap-2">
+										<Skeleton class="h-8 w-8 rounded" />
+										<Skeleton class="h-8 w-8 rounded" />
+										<Skeleton class="h-8 w-8 rounded" />
+									</div>
+								</TableCell>
+							</TableRow>
+						{/each}
+					</TableBody>
+				</Table>
 			</div>
 		{:else if queue.length === 0}
 			<div class="py-12 text-center">

@@ -1,4 +1,4 @@
-import { USER_ENDPOINT } from '$lib/constants/backend';
+import { client } from '$lib/client';
 import { token } from './token.svelte';
 
 let fetchState = $state<'not_fetched' | 'fetching' | 'fetched'>('not_fetched');
@@ -15,36 +15,28 @@ $effect.root(() => {
 	$effect(() => {
 		if (token.value) {
 			fetchState = 'fetching';
-			fetch(USER_ENDPOINT, {
-				headers: {
-					Authorization: `Bearer ${token.value}`
-				}
-			})
-				.then(async (res) => {
-					if (res.ok) {
-						isLoggedInState = true;
-						const data = await res.json();
-						if (data) {
-							isAdminUser = Boolean(data.is_superuser);
-							firstName = data.first_name ?? null;
-							lastName = data.last_name ?? null;
-							email = data.email ?? null;
-							username = data.username ?? null;
-						}
-						fetchState = 'fetched';
-					} else {
+			client
+				.GET('/api/user/', {
+					headers: {
+						Authorization: `Bearer ${token.value}`
+					}
+				})
+				.then(({ data, error }) => {
+					if (error) {
 						isLoggedInState = false;
 						isAdminUser = null;
 						firstName = lastName = email = username = null;
-						token.set(null);
 						fetchState = 'not_fetched';
+						return;
 					}
-				})
-				.catch(() => {
-					isLoggedInState = false;
-					isAdminUser = null;
-					firstName = lastName = email = username = null;
-					fetchState = 'not_fetched';
+
+					isLoggedInState = true;
+					isAdminUser = Boolean(data.is_superuser);
+					firstName = data.first_name ?? null;
+					lastName = data.last_name ?? null;
+					email = data.email ?? null;
+					username = data.username ?? null;
+					fetchState = 'fetched';
 				});
 		} else {
 			// Reset state when token is cleared

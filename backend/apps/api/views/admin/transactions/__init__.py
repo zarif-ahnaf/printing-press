@@ -1,5 +1,3 @@
-from typing import List
-
 from django.contrib.auth.models import User
 from ninja import Router
 
@@ -14,20 +12,16 @@ router = Router(tags=["Transactions"])
 
 
 @router.get(
-    "",
+    "/{username}",
     auth=AuthBearer(),
-    response={
-        200: List[TransactionResponse],
-        403: dict,
-        404: dict,
-        400: dict,
-    },
+    response=list[TransactionResponse],
 )
 @admin_required
 def list_user_transactions(
     request: HttpRequest,
+    username: str,
 ):
-    target_user = User.objects.get(pk=request.auth.pk)
+    target_user = User.objects.get(username=username)
 
     transactions = Transaction.objects.filter(user=target_user).order_by("-created_at")
 

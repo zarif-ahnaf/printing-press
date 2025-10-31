@@ -10,11 +10,11 @@
 	import { Input } from '$lib/components/ui/input';
 	import { Label } from '$lib/components/ui/label';
 	import { toast } from 'svelte-sonner';
-	import { LOGIN_URL } from '$lib/constants/backend';
 	import { Eye, EyeOff } from 'lucide-svelte';
 	import { token } from '$lib/stores/token.svelte';
 	import { is_logged_in } from '$lib/stores/auth.svelte';
 	import { onMount } from 'svelte';
+	import { client } from '$lib/client';
 
 	let username = $state('');
 	let password = $state('');
@@ -45,28 +45,21 @@
 		loading = true;
 
 		try {
-			const res = await fetch(LOGIN_URL, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json'
-				},
-				body: JSON.stringify({
-					username: username.trim(),
-					password: password.trim()
-				})
+			const { data, error } = await client.POST('/api/user/login/', {
+				body: {
+					username,
+					password
+				}
 			});
-
-			const data = await res.json();
-
-			if (res.ok && typeof data.token === 'string') {
-				token.set(data.token);
-				toast.success('Login successful!');
-				setTimeout(() => {
-					window.location.href = next;
-				}, 1000);
-			} else {
-				toast.error('Invalid username or password.');
+			if (error) {
+				toast.error(`Login failed. Please try again. Reason:${error}`);
 			}
+
+			token.set(data.token);
+			toast.success('Login successful!');
+			setTimeout(() => {
+				window.location.href = next;
+			}, 1000);
 		} catch (err) {
 			console.error('Login network error:', err);
 			toast.error('Network error. Please try again.');

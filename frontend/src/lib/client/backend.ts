@@ -4,1175 +4,1144 @@
  */
 
 export interface paths {
-	'/api/admin/balance/{username}': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/**
-		 * Get User Balance
-		 * @description Returns the authenticated user's wallet balance.
-		 */
-		get: operations['apps_api_views_admin_balance_get_user_balance'];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/admin/deposit/': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** Admin Deposit */
-		post: operations['apps_api_views_admin_deposit_admin_deposit'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/admin/transactions/': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** List User Transactions */
-		get: operations['apps_api_views_admin_transactions_list_user_transactions'];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/charge/': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** Charge Wallet */
-		post: operations['apps_api_views_charge_charge_wallet'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/charge/{username}': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** Charge Wallet For User */
-		post: operations['apps_api_views_charge_charge_wallet_for_user'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/convert/merge/': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/**
-		 * Merge Pdfs
-		 * @description Merge multiple uploaded PDF files into a single PDF.
-		 *
-		 *     - Accepts 2 or more PDF files.
-		 *     - Returns merged PDF as an inline HTTP response.
-		 */
-		post: operations['apps_api_views_convert_merge_merge_pdfs'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/convert/nonblank/': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/**
-		 * Count Nonblank Pages
-		 * @description Upload a PDF to count non-blank pages.
-		 *     Set `return_pdf=true` to download a version without blank pages.
-		 */
-		post: operations['apps_api_views_convert_nonblank_count_nonblank_pages'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/convert/pdf/': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** Convert To Pdf */
-		post: operations['apps_api_views_convert_pdf_convert_to_pdf'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/queue/': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** List queued files */
-		get: operations['apps_api_views_queue_list_queue'];
-		put?: never;
-		/** Queue files for processing */
-		post: operations['apps_api_views_queue_queue_files'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/queue/{queue_id}/print-mode': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** Change Page Mode */
-		post: operations['apps_api_views_queue_change_page_mode'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/queue/{queue_id}/delete': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post?: never;
-		/** Mark file as unprocessed */
-		delete: operations['apps_api_views_queue_remove_queue_file'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/queue/{queue_id}/processed': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** Mark file as processed */
-		post: operations['apps_api_views_queue_mark_as_processed'];
-		/** Mark file as unprocessed */
-		delete: operations['apps_api_views_queue_mark_as_unprocessed'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/user/': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** Get Current User Info */
-		get: operations['apps_api_views_user_get_current_user_info'];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/user/balance/': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/**
-		 * Get Balance
-		 * @description Returns the authenticated user's wallet balance.
-		 */
-		get: operations['apps_api_views_user_balance_get_balance'];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/user/login/': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		/** Post User Login Info */
-		post: operations['apps_api_views_user_login_post_user_login_info'];
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/user/logout/': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		get?: never;
-		put?: never;
-		post?: never;
-		/** Post User Logout Info */
-		delete: operations['apps_api_views_user_logout_post_user_logout_info'];
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/user/queue/': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** List Queue By User */
-		get: operations['apps_api_views_user_queue_list_queue_by_user'];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/user/transactions/': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/**
-		 * Get User Transactions By Username
-		 * @description Get transaction history for a specific user by username.
-		 */
-		get: operations['apps_api_views_user_transactions_get_user_transactions_by_username'];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
-	'/api/users/': {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		/** Show All Users */
-		get: operations['apps_api_views_users_show_all_users'];
-		put?: never;
-		post?: never;
-		delete?: never;
-		options?: never;
-		head?: never;
-		patch?: never;
-		trace?: never;
-	};
+    "/api/admin/balance/{username}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get User Balance
+         * @description Returns the authenticated user's wallet balance.
+         */
+        get: operations["apps_api_views_admin_balance_get_user_balance"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/deposit/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Admin Deposit */
+        post: operations["apps_api_views_admin_deposit_admin_deposit"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/transactions/{username}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List User Transactions */
+        get: operations["apps_api_views_admin_transactions_list_user_transactions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/charge/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Charge Wallet */
+        post: operations["apps_api_views_charge_charge_wallet"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/charge/{username}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Charge Wallet For User */
+        post: operations["apps_api_views_charge_charge_wallet_for_user"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/convert/merge/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Merge Pdfs
+         * @description Merge multiple uploaded PDF files into a single PDF.
+         *
+         *     - Accepts 2 or more PDF files.
+         *     - Returns merged PDF as an inline HTTP response.
+         */
+        post: operations["apps_api_views_convert_merge_merge_pdfs"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/convert/nonblank/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Count Nonblank Pages
+         * @description Upload a PDF to count non-blank pages.
+         *     Set `return_pdf=true` to download a version without blank pages.
+         */
+        post: operations["apps_api_views_convert_nonblank_count_nonblank_pages"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/convert/pdf/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Convert To Pdf */
+        post: operations["apps_api_views_convert_pdf_convert_to_pdf"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/queue/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List queued files */
+        get: operations["apps_api_views_queue_list_queue"];
+        put?: never;
+        /** Queue files for processing */
+        post: operations["apps_api_views_queue_queue_files"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/queue/{queue_id}/print-mode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Change Page Mode */
+        post: operations["apps_api_views_queue_change_page_mode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/queue/{queue_id}/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Mark file as unprocessed */
+        delete: operations["apps_api_views_queue_remove_queue_file"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/queue/{queue_id}/processed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Mark file as processed */
+        post: operations["apps_api_views_queue_mark_as_processed"];
+        /** Mark file as unprocessed */
+        delete: operations["apps_api_views_queue_mark_as_unprocessed"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/user/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Current User Info */
+        get: operations["apps_api_views_user_get_current_user_info"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/user/balance/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Balance
+         * @description Returns the authenticated user's wallet balance.
+         */
+        get: operations["apps_api_views_user_balance_get_balance"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/user/login/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Post User Login Info */
+        post: operations["apps_api_views_user_login_post_user_login_info"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/user/logout/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Post User Logout Info */
+        delete: operations["apps_api_views_user_logout_post_user_logout_info"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/user/queue/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Queue By User */
+        get: operations["apps_api_views_user_queue_list_queue_by_user"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/user/transactions/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get User Transactions By Username
+         * @description Get transaction history for a specific user by username.
+         */
+        get: operations["apps_api_views_user_transactions_get_user_transactions_by_username"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Show All Users */
+        get: operations["apps_api_views_users_show_all_users"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
-	schemas: {
-		/** BalanceResponse */
-		BalanceResponse: {
-			/** Balance */
-			balance: string;
-		};
-		/** AdminDepositResponse */
-		AdminDepositResponse: {
-			/** Success */
-			success: boolean;
-			/** User Id */
-			user_id: number;
-			/** Username */
-			username: string;
-			/** Amount Deposited */
-			amount_deposited: number | string;
-			/** New Balance */
-			new_balance: number | string;
-			/** Message */
-			message: string;
-		};
-		/** AdminDepositPayload */
-		AdminDepositPayload: {
-			/** Username */
-			username: string;
-			/** Amount */
-			amount: string;
-			/** Description */
-			description?: string | null;
-		};
-		/** TransactionResponse */
-		TransactionResponse: {
-			/** Id */
-			id: number;
-			/** Transaction Type */
-			transaction_type: string;
-			/** Amount */
-			amount: string;
-			/** Description */
-			description: string;
-			/** Created At */
-			created_at: string;
-		};
-		/** ChargeResponse */
-		ChargeResponse: {
-			/** Message */
-			message: string;
-			/** Charged Amount */
-			charged_amount: number;
-			/** Remaining Balance */
-			remaining_balance: number;
-		};
-		/** ChargeRequest */
-		ChargeRequest: {
-			/** Amount */
-			amount: number;
-			/**
-			 * Description
-			 * @default Manual charge
-			 */
-			description: string;
-			/** User Id */
-			user_id?: number | null;
-		};
-		/** QueueUploadResponse */
-		QueueUploadResponse: {
-			/** Message */
-			message: string;
-			/** Total Pages */
-			total_pages: number;
-			/** Queue Ids */
-			queue_ids: number[];
-			/** Total Charged Bdt */
-			total_charged_bdt: string;
-		};
-		/** QueueFileUpload */
-		QueueFileUpload: {
-			/** User Id */
-			user_id?: number | null;
-		};
-		/** QueueFileResponse */
-		QueueFileResponse: {
-			/** Id */
-			id: number;
-			/** File */
-			file: string;
-			/** Processed */
-			processed: boolean;
-			/** Created At */
-			created_at: string;
-			/** User */
-			user: string;
-			/** User Id */
-			user_id: number;
-			/** Page Count */
-			page_count: number | null;
-		};
-		/** QueueListResponse */
-		QueueListResponse: {
-			/** Queue */
-			queue: components['schemas']['QueueFileResponse'][];
-		};
-		/** ChangePrintModeRequest */
-		ChangePrintModeRequest: {
-			/**
-			 * Page Type
-			 * @enum {string}
-			 */
-			page_type: 'single-sided' | 'double-sided';
-		};
-		/** QueueDeleteResponse */
-		QueueDeleteResponse: {
-			/** Id */
-			id: number;
-			/** Message */
-			message: string;
-		};
-		/** ProcessStatusResponse */
-		ProcessStatusResponse: {
-			/** Id */
-			id: number;
-			/** Processed */
-			processed: boolean;
-			/** Message */
-			message: string;
-		};
-		/** UserSchema */
-		UserSchema: {
-			/** Id */
-			id: number;
-			/** Username */
-			username: string;
-			/** Email */
-			email: string;
-			/** First Name */
-			first_name?: string | null;
-			/** Last Name */
-			last_name?: string | null;
-			/** Is Active */
-			is_active: boolean;
-			/** Is Staff */
-			is_staff: boolean;
-			/** Is Superuser */
-			is_superuser: boolean;
-			/**
-			 * Date Joined
-			 * Format: date-time
-			 */
-			date_joined: string;
-		};
-		/** LoginOutSchema */
-		LoginOutSchema: {
-			/** Token */
-			token: string;
-		};
-		/** LoginInSchema */
-		LoginInSchema: {
-			/** Username */
-			username: string;
-			/** Password */
-			password: string;
-		};
-		/** UserFilter */
-		UserFilter: {
-			/** Name */
-			name?: string | null;
-		};
-	};
-	responses: never;
-	parameters: never;
-	requestBodies: never;
-	headers: never;
-	pathItems: never;
+    schemas: {
+        /** BalanceResponse */
+        BalanceResponse: {
+            /** Balance */
+            balance: string;
+        };
+        /** AdminDepositResponse */
+        AdminDepositResponse: {
+            /** Success */
+            success: boolean;
+            /** User Id */
+            user_id: number;
+            /** Username */
+            username: string;
+            /** Amount Deposited */
+            amount_deposited: number | string;
+            /** New Balance */
+            new_balance: number | string;
+            /** Message */
+            message: string;
+        };
+        /** AdminDepositPayload */
+        AdminDepositPayload: {
+            /** Username */
+            username: string;
+            /** Amount */
+            amount: string;
+            /** Description */
+            description?: string | null;
+        };
+        /** TransactionResponse */
+        TransactionResponse: {
+            /** Id */
+            id: number;
+            /** Transaction Type */
+            transaction_type: string;
+            /** Amount */
+            amount: string;
+            /** Description */
+            description: string;
+            /** Created At */
+            created_at: string;
+        };
+        /** ChargeResponse */
+        ChargeResponse: {
+            /** Message */
+            message: string;
+            /** Charged Amount */
+            charged_amount: number;
+            /** Remaining Balance */
+            remaining_balance: number;
+        };
+        /** ChargeRequest */
+        ChargeRequest: {
+            /** Amount */
+            amount: number;
+            /**
+             * Description
+             * @default Manual charge
+             */
+            description: string;
+            /** User Id */
+            user_id?: number | null;
+        };
+        /** QueueUploadResponse */
+        QueueUploadResponse: {
+            /** Message */
+            message: string;
+            /** Total Pages */
+            total_pages: number;
+            /** Queue Ids */
+            queue_ids: number[];
+            /** Total Charged Bdt */
+            total_charged_bdt: string;
+        };
+        /** QueueFileUpload */
+        QueueFileUpload: {
+            /** User Id */
+            user_id?: number | null;
+        };
+        /** QueueFileResponse */
+        QueueFileResponse: {
+            /** Id */
+            id: number;
+            /** File */
+            file: string;
+            /** Processed */
+            processed: boolean;
+            /** Created At */
+            created_at: string;
+            /** User */
+            user: string;
+            /** User Id */
+            user_id: number;
+            /** Page Count */
+            page_count: number | null;
+        };
+        /** QueueListResponse */
+        QueueListResponse: {
+            /** Queue */
+            queue: components["schemas"]["QueueFileResponse"][];
+        };
+        /** ChangePrintModeRequest */
+        ChangePrintModeRequest: {
+            /**
+             * Page Type
+             * @enum {string}
+             */
+            page_type: "single-sided" | "double-sided";
+        };
+        /** QueueDeleteResponse */
+        QueueDeleteResponse: {
+            /** Id */
+            id: number;
+            /** Message */
+            message: string;
+        };
+        /** ProcessStatusResponse */
+        ProcessStatusResponse: {
+            /** Id */
+            id: number;
+            /** Processed */
+            processed: boolean;
+            /** Message */
+            message: string;
+        };
+        /** UserSchema */
+        UserSchema: {
+            /** Id */
+            id: number;
+            /** Username */
+            username: string;
+            /** Email */
+            email: string;
+            /** First Name */
+            first_name?: string | null;
+            /** Last Name */
+            last_name?: string | null;
+            /** Is Active */
+            is_active: boolean;
+            /** Is Staff */
+            is_staff: boolean;
+            /** Is Superuser */
+            is_superuser: boolean;
+            /**
+             * Date Joined
+             * Format: date-time
+             */
+            date_joined: string;
+        };
+        /** LoginOutSchema */
+        LoginOutSchema: {
+            /** Token */
+            token: string;
+        };
+        /** LoginInSchema */
+        LoginInSchema: {
+            /** Username */
+            username: string;
+            /** Password */
+            password: string;
+        };
+        /** UserFilter */
+        UserFilter: {
+            /** Name */
+            name?: string | null;
+        };
+    };
+    responses: never;
+    parameters: never;
+    requestBodies: never;
+    headers: never;
+    pathItems: never;
 }
 export type $defs = Record<string, never>;
 export interface operations {
-	apps_api_views_admin_balance_get_user_balance: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				username: string;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['BalanceResponse'];
-				};
-			};
-		};
-	};
-	apps_api_views_admin_deposit_admin_deposit: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['AdminDepositPayload'];
-			};
-		};
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['AdminDepositResponse'];
-				};
-			};
-			/** @description Bad Request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': {
-						[key: string]: unknown;
-					};
-				};
-			};
-			/** @description Forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': {
-						[key: string]: unknown;
-					};
-				};
-			};
-			/** @description Not Found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': {
-						[key: string]: unknown;
-					};
-				};
-			};
-		};
-	};
-	apps_api_views_admin_transactions_list_user_transactions: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['TransactionResponse'][];
-				};
-			};
-			/** @description Bad Request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': {
-						[key: string]: unknown;
-					};
-				};
-			};
-			/** @description Forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': {
-						[key: string]: unknown;
-					};
-				};
-			};
-			/** @description Not Found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': {
-						[key: string]: unknown;
-					};
-				};
-			};
-		};
-	};
-	apps_api_views_charge_charge_wallet: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['ChargeRequest'];
-			};
-		};
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ChargeResponse'];
-				};
-			};
-			/** @description Bad Request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': {
-						[key: string]: unknown;
-					};
-				};
-			};
-			/** @description Forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': {
-						[key: string]: unknown;
-					};
-				};
-			};
-			/** @description Not Found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': {
-						[key: string]: unknown;
-					};
-				};
-			};
-		};
-	};
-	apps_api_views_charge_charge_wallet_for_user: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				username: string;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['ChargeRequest'];
-			};
-		};
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ChargeResponse'];
-				};
-			};
-			/** @description Bad Request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': {
-						[key: string]: unknown;
-					};
-				};
-			};
-			/** @description Forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': {
-						[key: string]: unknown;
-					};
-				};
-			};
-			/** @description Not Found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': {
-						[key: string]: unknown;
-					};
-				};
-			};
-		};
-	};
-	apps_api_views_convert_merge_merge_pdfs: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'multipart/form-data': {
-					/** Files */
-					files: string[];
-				};
-			};
-		};
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content?: never;
-			};
-		};
-	};
-	apps_api_views_convert_nonblank_count_nonblank_pages: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'multipart/form-data': {
-					/**
-					 * File
-					 * Format: binary
-					 */
-					file: string;
-					/**
-					 * Return Pdf
-					 * @default false
-					 */
-					return_pdf?: boolean;
-				};
-			};
-		};
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content?: never;
-			};
-		};
-	};
-	apps_api_views_convert_pdf_convert_to_pdf: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'multipart/form-data': {
-					/**
-					 * File
-					 * Format: binary
-					 */
-					file: string;
-				};
-			};
-		};
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content?: never;
-			};
-		};
-	};
-	apps_api_views_queue_list_queue: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['QueueListResponse'];
-				};
-			};
-		};
-	};
-	apps_api_views_queue_queue_files: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'multipart/form-data': {
-					/** Files */
-					files: string[];
-					/** User Id */
-					user_id?: number | null;
-				};
-			};
-		};
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['QueueUploadResponse'];
-				};
-			};
-		};
-	};
-	apps_api_views_queue_change_page_mode: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				queue_id: number;
-			};
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['ChangePrintModeRequest'];
-			};
-		};
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content?: never;
-			};
-		};
-	};
-	apps_api_views_queue_remove_queue_file: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				queue_id: number;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['QueueDeleteResponse'];
-				};
-			};
-		};
-	};
-	apps_api_views_queue_mark_as_processed: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				queue_id: number;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['ProcessStatusResponse'];
-				};
-			};
-		};
-	};
-	apps_api_views_queue_mark_as_unprocessed: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path: {
-				queue_id: number;
-			};
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content?: never;
-			};
-		};
-	};
-	apps_api_views_user_get_current_user_info: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['UserSchema'];
-				};
-			};
-		};
-	};
-	apps_api_views_user_balance_get_balance: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['BalanceResponse'];
-				};
-			};
-		};
-	};
-	apps_api_views_user_login_post_user_login_info: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody: {
-			content: {
-				'application/json': components['schemas']['LoginInSchema'];
-			};
-		};
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['LoginOutSchema'];
-				};
-			};
-		};
-	};
-	apps_api_views_user_logout_post_user_logout_info: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content?: never;
-			};
-		};
-	};
-	apps_api_views_user_queue_list_queue_by_user: {
-		parameters: {
-			query?: never;
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content?: never;
-			};
-		};
-	};
-	apps_api_views_user_transactions_get_user_transactions_by_username: {
-		parameters: {
-			query: {
-				username: string;
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['TransactionResponse'][];
-				};
-			};
-			/** @description Bad Request */
-			400: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': {
-						[key: string]: unknown;
-					};
-				};
-			};
-			/** @description Forbidden */
-			403: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': {
-						[key: string]: unknown;
-					};
-				};
-			};
-			/** @description Not Found */
-			404: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': {
-						[key: string]: unknown;
-					};
-				};
-			};
-		};
-	};
-	apps_api_views_users_show_all_users: {
-		parameters: {
-			query?: {
-				name?: string | null;
-			};
-			header?: never;
-			path?: never;
-			cookie?: never;
-		};
-		requestBody?: never;
-		responses: {
-			/** @description OK */
-			200: {
-				headers: {
-					[name: string]: unknown;
-				};
-				content: {
-					'application/json': components['schemas']['UserSchema'][];
-				};
-			};
-		};
-	};
+    apps_api_views_admin_balance_get_user_balance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BalanceResponse"];
+                };
+            };
+        };
+    };
+    apps_api_views_admin_deposit_admin_deposit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminDepositPayload"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDepositResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    apps_api_views_admin_transactions_list_user_transactions: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransactionResponse"][];
+                };
+            };
+        };
+    };
+    apps_api_views_charge_charge_wallet: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChargeRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChargeResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    apps_api_views_charge_charge_wallet_for_user: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                username: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChargeRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChargeResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    apps_api_views_convert_merge_merge_pdfs: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Files */
+                    files: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    apps_api_views_convert_nonblank_count_nonblank_pages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * File
+                     * Format: binary
+                     */
+                    file: string;
+                    /**
+                     * Return Pdf
+                     * @default false
+                     */
+                    return_pdf?: boolean;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    apps_api_views_convert_pdf_convert_to_pdf: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * File
+                     * Format: binary
+                     */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    apps_api_views_queue_list_queue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueListResponse"];
+                };
+            };
+        };
+    };
+    apps_api_views_queue_queue_files: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Files */
+                    files: string[];
+                    /** User Id */
+                    user_id?: number | null;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueUploadResponse"];
+                };
+            };
+        };
+    };
+    apps_api_views_queue_change_page_mode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                queue_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChangePrintModeRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    apps_api_views_queue_remove_queue_file: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                queue_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueDeleteResponse"];
+                };
+            };
+        };
+    };
+    apps_api_views_queue_mark_as_processed: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                queue_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ProcessStatusResponse"];
+                };
+            };
+        };
+    };
+    apps_api_views_queue_mark_as_unprocessed: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                queue_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    apps_api_views_user_get_current_user_info: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserSchema"];
+                };
+            };
+        };
+    };
+    apps_api_views_user_balance_get_balance: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BalanceResponse"];
+                };
+            };
+        };
+    };
+    apps_api_views_user_login_post_user_login_info: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LoginInSchema"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginOutSchema"];
+                };
+            };
+        };
+    };
+    apps_api_views_user_logout_post_user_logout_info: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    apps_api_views_user_queue_list_queue_by_user: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    apps_api_views_user_transactions_get_user_transactions_by_username: {
+        parameters: {
+            query: {
+                username: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TransactionResponse"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    apps_api_views_users_show_all_users: {
+        parameters: {
+            query?: {
+                name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserSchema"][];
+                };
+            };
+        };
+    };
 }
