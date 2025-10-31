@@ -35,7 +35,7 @@ def convert_to_pdf(request: HttpRequest, file: File[UploadedFile]):
         with open(output_path, "rb") as pdf_file:
             pdf_bytes = pdf_file.read()
 
-    # TemporaryDirectory is now cleaned up (files deleted)
+    # # TemporaryDirectory is now cleaned up (files deleted)
     response = HttpResponse(pdf_bytes, content_type="application/pdf")
     response["Content-Disposition"] = f'attachment; filename="{stem}.pdf"'
     return response

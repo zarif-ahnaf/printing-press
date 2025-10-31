@@ -1,24 +1,24 @@
-from django.contrib.auth.models import User
-from django.shortcuts import get_object_or_404
 from ninja import Router
 
 from apps.queue.models import Queue
 
-from ...auth import AuthBearer
-from ...decorators import login_required
-from ...http import HttpRequest
-from ...schemas.queue import QueueFileResponse, QueueListResponse
+from ....auth import AuthBearer
+from ....decorators import admin_required
+from ....http import HttpRequest
+from ....schemas.queue import QueueFileResponse, QueueListResponse
 
 router = Router(tags=["Queue"])
 
 
-@router.get("", auth=AuthBearer(), response=QueueListResponse)
-@login_required
-def list_queue_by_user(
-    request: HttpRequest,
-):
-    target_user = get_object_or_404(User, id=request.auth.pk)
-    queryset = Queue.objects.filter(user=target_user)
+@router.get(
+    "",
+    auth=AuthBearer(),
+    response=QueueListResponse,
+    summary="List queued files",
+)
+@admin_required
+def list_queue(request: HttpRequest):
+    queryset = Queue.objects.all()
 
     items = [
         QueueFileResponse(

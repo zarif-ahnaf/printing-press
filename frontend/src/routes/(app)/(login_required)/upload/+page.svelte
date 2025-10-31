@@ -33,14 +33,10 @@
 		DropdownMenuItem,
 		DropdownMenuTrigger
 	} from '$lib/components/ui/dropdown-menu';
-	import {
-		NONBLANK_URL,
-		QUEUE_URL,
-		PDF_CONVERT_URL,
-		ALL_USER_ENDPOINT
-	} from '$lib/constants/backend';
+	import { NONBLANK_URL, PDF_CONVERT_URL } from '$lib/constants/backend';
 	import { goto } from '$app/navigation';
 	import { uuidv4 } from '$lib/functions/uuid4';
+	import { client } from '$lib/client';
 
 	// Svelte 5 runes
 	let files = $state<PDFFile[]>([]);
@@ -68,15 +64,10 @@
 		id: number;
 		username: string;
 		email: string;
-		first_name: string;
-		last_name: string;
+		first_name?: null | undefined | string;
+		last_name?: null | undefined | string;
 	}
-	interface QueueUploadResponse {
-		message: string;
-		total_pages: number;
-		queue_ids: number[];
-		total_charged_bdt: string;
-	}
+
 	interface PDFFile {
 		id: string;
 		file: File;
@@ -122,29 +113,26 @@
 
 	async function fetchUsers(searchTerm: string = '') {
 		isLoadingUsers = true;
+		console.log(searchTerm);
 		try {
-			const headers: Record<string, string> = {};
-			if (token.value) {
-				headers.Authorization = `Bearer ${token.value}`;
-			}
-
-			let url = ALL_USER_ENDPOINT;
-			if (searchTerm) {
-				const params = new URLSearchParams({ name: searchTerm });
-				url += `?${params.toString()}`;
-			}
-
-			const response = await fetch(url, {
-				method: 'GET',
-				headers
+			const { data, error } = await client.GET('/api/users/', {
+				headers: {
+					Authorization: `Bearer ${token.value}`
+				},
+				params: {
+					query: searchTerm
+						? {
+								name: searchTerm
+							}
+						: {}
+				}
 			});
 
-			if (!response.ok) {
-				throw new Error(`Failed to fetch users: ${response.status} ${response.statusText}`);
+			if (error) {
+				throw new Error(`Failed to fetch users: ${error}`);
 			}
 
-			const userData: APIUser[] = await response.json();
-			users = userData;
+			users = data;
 		} catch (error: any) {
 			toast.error('Failed to load users', {
 				description: error.message || 'An unknown error occurred',
@@ -366,25 +354,25 @@
 		}
 
 		try {
-			const res = await fetch(QUEUE_URL, {
-				method: 'POST',
-				headers, // Note: DO NOT set Content-Type — browser sets it with boundary
-				body: formData
+			const { data, error } = await client.POST('/api/queue/', {
+				headers,
+				body: {
+					files: new Array<string>()
+				},
+				bodySerializer() {
+					return formData;
+				}
 			});
 
-			if (res.ok) {
-				const data: QueueUploadResponse = await res.json(); // ✅ Parse JSON response
-				filesToSubmit.forEach((pdfFile) => {
-					pdfFile.enqueueStatus = 'success';
-				});
-				toast.success(data.message, { duration: 4000 });
-				goto('/transactions');
-			} else {
-				const errorData = await res.json().catch(() => ({}));
-				const errorMsg =
-					errorData?.detail || errorData?.message || `Enqueue failed (${res.status})`;
-				throw new Error(errorMsg);
+			if (error) {
+				throw new Error(error);
 			}
+
+			filesToSubmit.forEach((pdfFile) => {
+				pdfFile.enqueueStatus = 'success';
+			});
+			toast.success(data.message, { duration: 4000 });
+			goto('/transactions');
 		} catch (error: any) {
 			toast.error('Enqueue failed', {
 				description: error.message || 'An unknown error occurred',

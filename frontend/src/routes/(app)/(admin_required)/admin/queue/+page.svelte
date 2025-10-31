@@ -52,10 +52,11 @@
 		Repeat
 	} from 'lucide-svelte';
 
-	import { CHARGE_ENDPOINT, MERGE_ENDPOINT, QUEUE_URL } from '$lib/constants/backend';
+	import { MERGE_ENDPOINT } from '$lib/constants/backend';
 	import { token } from '$lib/stores/token.svelte';
 	import { createRefCountedCache } from '$lib/cache/createRefCountedCache';
 	import { cn } from '$lib/utils';
+	import { client } from '$lib/client';
 
 	interface QueueItem {
 		id: number;
@@ -148,21 +149,22 @@
 
 		charging = { ...charging, [item.id]: true };
 		try {
-			const res = await fetch(CHARGE_ENDPOINT, {
-				method: 'POST',
-				headers: {
-					'Content-Type': 'application/json',
-					Authorization: `Bearer ${token.value}`
+			const { data, error } = await client.POST('/api/charge/{username}', {
+				headers: { Authorization: `Bearer ${token.value}` },
+				params: {
+					path: {
+						username: item.user
+					}
 				},
-				body: JSON.stringify({
+				body: {
 					user_id: item.user_id,
 					amount: sheets,
 					description: `Simplex printing: ${item.file.split('/').pop()} (${item.pageCount} pages → ${sheets} sheets)`
-				})
+				}
 			});
-			if (!res.ok) {
-				const err = await res.json();
-				throw new Error(err.detail || 'Charge failed');
+
+			if (error) {
+				throw new Error('Charge failed');
 			}
 			return true;
 		} catch (err) {
@@ -366,12 +368,10 @@
 		async function fetchQueue() {
 			try {
 				loading = true;
-				error = null;
-				const res = await fetch(QUEUE_URL, {
+				const { data, error } = await client.GET('/api/admin/queue/', {
 					headers: { Authorization: `Bearer ${token.value}` }
 				});
-				if (!res.ok) throw new Error('Failed to fetch queue');
-				const data = await res.json();
+				if (error) throw new Error('Failed to fetch queue');
 				queue = (data.queue || []).map((item: any) => ({
 					...item,
 					pageCount: item.page_count ?? undefined
@@ -537,15 +537,18 @@
 		confirmingSelected = { ...confirmingSelected, [user]: true };
 		try {
 			for (const item of itemsToConfirm) {
-				const res = await fetch(`${QUEUE_URL}${item.id}/processed`, {
-					method: 'POST',
-					headers: { Authorization: `Bearer ${token.value}`, 'Content-Type': 'application/json' }
+				const { data: result, error } = await client.POST('/api/queue/{queue_id}/processed', {
+					params: {
+						path: {
+							queue_id: item.id
+						}
+					},
+					headers: { Authorization: `Bearer ${token.value}` }
 				});
-				if (!res.ok) {
-					const err = await res.json();
-					throw new Error(err.detail || `Confirm failed for ${item.id}`);
+
+				if (error) {
+					throw new Error(error || `Confirm failed for ${item.id}`);
 				}
-				const result = await res.json();
 				if (result.processed) {
 					const userQueue = groupedQueue[user] || [];
 					const idx = userQueue.findIndex((i) => i.id === item.id);
@@ -566,13 +569,17 @@
 		const { id, user } = item;
 		unprocessingItem = { ...unprocessingItem, [id]: true };
 		try {
-			const res = await fetch(`${QUEUE_URL}${id}/processed`, {
-				method: 'DELETE',
-				headers: { Authorization: `Bearer ${token.value}`, 'Content-Type': 'application/json' }
+			const { data, error } = await client.DELETE('/api/queue/{queue_id}/processed', {
+				params: {
+					path: {
+						queue_id: id
+					}
+				},
+				headers: { Authorization: `Bearer ${token.value}` }
 			});
-			if (!res.ok) {
-				const err = await res.json();
-				throw new Error(err.detail || `Unprocess failed for ${id}`);
+
+			if (error) {
+				throw new Error(error || `Unprocess failed for ${id}`);
 			}
 			const userQueue = groupedQueue[user] || [];
 			const idx = userQueue.findIndex((i) => i.id === id);
@@ -590,18 +597,18 @@
 		const { id, user } = item;
 		unprocessingItem = { ...unprocessingItem, [id]: true };
 		try {
-			const res = await fetch(`${QUEUE_URL}${id}/processed`, {
-				method: 'POST',
-				headers: {
-					Authorization: `Bearer ${token.value}`,
-					'Content-Type': 'application/json'
-				}
+			const { data: result, error } = await client.POST('/api/queue/{queue_id}/processed', {
+				params: {
+					path: {
+						queue_id: id
+					}
+				},
+				headers: { Authorization: `Bearer ${token.value}` }
 			});
-			if (!res.ok) {
-				const err = await res.json();
-				throw new Error(err.detail || `Confirm failed for ${id}`);
+
+			if (error) {
+				throw new Error(error || `Confirm failed for ${id}`);
 			}
-			const result = await res.json();
 			if (result.processed) {
 				const userQueue = groupedQueue[user] || [];
 				const idx = userQueue.findIndex((i) => i.id === id);

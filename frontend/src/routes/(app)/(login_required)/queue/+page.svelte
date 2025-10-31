@@ -206,7 +206,7 @@
 
 				if (error) throw new Error('Failed to fetch queue');
 
-				queue = (data || []).map((item: any) => ({
+				queue = (data.queue || []).map((item: any) => ({
 					...item,
 					pageCount: item.page_count ?? undefined
 				}));

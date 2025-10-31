@@ -10,16 +10,13 @@ from ninja.files import UploadedFile
 from apps.queue.models import Queue
 
 from ...auth import AuthBearer
-from ...decorators import login_required
 from ...http import HttpRequest
 from ...schemas.queue import (
     ChangePrintModeRequest,
     ChangeProcessStatusResponse,
     ProcessStatusResponse,
     QueueDeleteResponse,
-    QueueFileResponse,
     QueueFileUpload,
-    QueueListResponse,
     QueueUploadResponse,
 )
 from ...utils.pdf import count_pdf_pages
@@ -108,33 +105,6 @@ def queue_files(
         queue_ids=[item.pk for item in created_items],
         total_charged_bdt=str(COST_PER_PAGE * total_pages),
     )
-
-
-@router.get(
-    "",
-    auth=AuthBearer(),
-    response=QueueListResponse,
-    summary="List queued files",
-)
-@login_required
-def list_queue(request: HttpRequest):
-    current_user = request.auth
-    queryset = Queue.objects.filter(user=current_user)
-
-    items = [
-        QueueFileResponse(
-            id=item.pk,
-            file=request.build_absolute_uri(item.file.url),
-            processed=item.processed,
-            created_at=item.created_at.isoformat(),
-            user=item.user.username,
-            user_id=item.user.pk,
-            page_count=item.page_count,
-        )
-        for item in queryset
-    ]
-
-    return QueueListResponse(queue=items)
 
 
 @router.post("{queue_id}/print-mode", auth=AuthBearer())

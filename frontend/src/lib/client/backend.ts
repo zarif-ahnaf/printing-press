@@ -41,6 +41,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/queue/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List queued files */
+        get: operations["apps_api_views_admin_queue_list_queue"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/transactions/{username}": {
         parameters: {
             query?: never;
@@ -160,8 +177,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List queued files */
-        get: operations["apps_api_views_queue_list_queue"];
+        get?: never;
         put?: never;
         /** Queue files for processing */
         post: operations["apps_api_views_queue_queue_files"];
@@ -381,6 +397,28 @@ export interface components {
             /** Description */
             description?: string | null;
         };
+        /** QueueFileResponse */
+        QueueFileResponse: {
+            /** Id */
+            id: number;
+            /** File */
+            file: string;
+            /** Processed */
+            processed: boolean;
+            /** Created At */
+            created_at: string;
+            /** User */
+            user: string;
+            /** User Id */
+            user_id: number;
+            /** Page Count */
+            page_count: number | null;
+        };
+        /** QueueListResponse */
+        QueueListResponse: {
+            /** Queue */
+            queue: components["schemas"]["QueueFileResponse"][];
+        };
         /** TransactionResponse */
         TransactionResponse: {
             /** Id */
@@ -430,28 +468,6 @@ export interface components {
         QueueFileUpload: {
             /** User Id */
             user_id?: number | null;
-        };
-        /** QueueFileResponse */
-        QueueFileResponse: {
-            /** Id */
-            id: number;
-            /** File */
-            file: string;
-            /** Processed */
-            processed: boolean;
-            /** Created At */
-            created_at: string;
-            /** User */
-            user: string;
-            /** User Id */
-            user_id: number;
-            /** Page Count */
-            page_count: number | null;
-        };
-        /** QueueListResponse */
-        QueueListResponse: {
-            /** Queue */
-            queue: components["schemas"]["QueueFileResponse"][];
         };
         /** ChangePrintModeRequest */
         ChangePrintModeRequest: {
@@ -602,6 +618,26 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    apps_api_views_admin_queue_list_queue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QueueListResponse"];
                 };
             };
         };
@@ -830,26 +866,6 @@ export interface operations {
             };
         };
     };
-    apps_api_views_queue_list_queue: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["QueueListResponse"];
-                };
-            };
-        };
-    };
     apps_api_views_queue_queue_files: {
         parameters: {
             query?: never;
@@ -1064,7 +1080,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["QueueFileResponse"][];
+                    "application/json": components["schemas"]["QueueListResponse"];
                 };
             };
         };
