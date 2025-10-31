@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import TransactionList from '$lib/components/TransactionList.svelte';
-	import { BALANCE_URL, TRANSACTIONS_URL } from '$lib/constants/backend';
 	import { token } from '$lib/stores/token.svelte';
+	import { client } from '$lib/client';
 
 	let transactions = $state<TransactionResponse[]>([]);
 	let balance = $state<number | undefined>(undefined);
@@ -11,7 +11,7 @@
 
 	type TransactionResponse = {
 		id: number;
-		transaction_type: 'deposit' | 'charge';
+		transaction_type: string;
 		amount: string;
 		description: string;
 		created_at: string;
@@ -19,23 +19,21 @@
 
 	onMount(async () => {
 		try {
-			const [balanceRes, transactionsRes] = await Promise.all([
-				fetch(BALANCE_URL, {
-					headers: { Authorization: `Bearer ${token.value}`, 'Content-Type': 'application/json' }
-				}),
-				fetch(TRANSACTIONS_URL, {
-					headers: { Authorization: `Bearer ${token.value}`, 'Content-Type': 'application/json' }
-				})
-			]);
+			const { data: balanceData, error: balanceError } = await client.GET('/api/user/balance/', {
+				headers: { Authorization: `Bearer ${token.value}` }
+			});
+			if (balanceError) throw new Error(`Balance API: ${balanceError}`);
 
-			if (!balanceRes.ok) throw new Error(`Balance API: ${balanceRes.status}`);
-			if (!transactionsRes.ok) throw new Error(`Transactions API: ${transactionsRes.status}`);
+			const { data: transactionsData, error: transactionsError } = await client.GET(
+				'/api/user/transactions/',
+				{
+					headers: { Authorization: `Bearer ${token.value}` }
+				}
+			);
+			if (transactionsError) throw new Error(`Transactions API: ${transactionsError}`);
 
-			const balanceData = await balanceRes.json();
-			const transactionsData: TransactionResponse[] = await transactionsRes.json();
-
-			balance = parseFloat(balanceData.balance);
-			transactions = transactionsData.sort(
+			balance = parseFloat(balanceData.balance || '0');
+			transactions = transactionsData?.sort(
 				(a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
 			);
 		} catch (err) {

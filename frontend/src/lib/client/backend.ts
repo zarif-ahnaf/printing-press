@@ -1063,15 +1063,15 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["QueueFileResponse"][];
+                };
             };
         };
     };
     apps_api_views_user_transactions_get_user_transactions_by_username: {
         parameters: {
-            query: {
-                username: string;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;

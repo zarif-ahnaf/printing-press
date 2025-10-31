@@ -5,6 +5,7 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig({
 	plugins: [tailwindcss(), sveltekit()],
 	build: {
+		sourcemap: true,
 		minify: 'terser',
 		terserOptions: {
 			keep_classnames: false,

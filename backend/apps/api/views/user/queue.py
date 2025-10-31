@@ -12,7 +12,7 @@ from ...schemas.queue import QueueFileResponse, QueueListResponse
 router = Router(tags=["Queue"])
 
 
-@router.get("", auth=AuthBearer())
+@router.get("", auth=AuthBearer(), response=list[QueueFileResponse])
 @login_required
 def list_queue_by_user(
     request: HttpRequest,

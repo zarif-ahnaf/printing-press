@@ -53,6 +53,8 @@
 	import { token } from '$lib/stores/token.svelte';
 	import { createRefCountedCache } from '$lib/cache/createRefCountedCache';
 	import { cn } from '$lib/utils';
+	import { client } from '$lib/client';
+	import { user_username } from '$lib/stores/auth.svelte';
 
 	interface QueueItem {
 		id: number;
@@ -69,7 +71,6 @@
 		page_type?: 'single-sided' | 'double-sided';
 	}
 
-	let currentUser = $state<string | null>(null);
 	let queue = $state<QueueItem[]>([]);
 	let loading = $state(true);
 	let error = $state<string | null>(null);
@@ -118,17 +119,22 @@
 		if (item.isMerged) return;
 		unprocessingItem = { ...unprocessingItem, [item.id]: true };
 		try {
-			const res = await fetch(`http://127.0.0.1:8000/api/queue/${item.id}/print-mode`, {
-				method: 'POST',
+			const { error } = await client.POST('/api/queue/{queue_id}/print-mode', {
+				params: {
+					path: {
+						queue_id: item.id
+					}
+				},
 				headers: {
-					'Content-Type': 'application/json',
 					Authorization: `Bearer ${token.value}`
 				},
-				body: JSON.stringify({ page_type: mode })
+				body: {
+					page_type: mode
+				}
 			});
-			if (!res.ok) {
-				const err = await res.json();
-				throw new Error(err.detail || 'Failed to update print mode');
+
+			if (error) {
+				throw new Error(error || 'Failed to update print mode');
 			}
 			itemPrintMode[item.id] = mode;
 		} catch (err) {
@@ -143,13 +149,18 @@
 		const { id } = item;
 		unprocessingItem = { ...unprocessingItem, [id]: true };
 		try {
-			const res = await fetch(`http://127.0.0.1:8000/api/queue/${id}/delete`, {
-				method: 'DELETE',
-				headers: { Authorization: `Bearer ${token.value}` }
+			const { error } = await client.DELETE('/api/queue/{queue_id}/delete', {
+				params: {
+					path: {
+						queue_id: id
+					}
+				},
+				headers: {
+					Authorization: `Bearer ${token.value}`
+				}
 			});
-			if (!res.ok) {
-				const err = await res.json();
-				throw new Error(err.detail || `Delete failed for ${id}`);
+			if (error) {
+				throw new Error(error || `Delete failed for ${id}`);
 			}
 			queue = queue.filter((i) => i.id !== id);
 		} catch (err) {
@@ -189,22 +200,13 @@
 	$effect(() => {
 		async function fetchQueue() {
 			try {
-				error = null;
-
-				const userRes = await fetch('http://127.0.0.1:8000/api/user/', {
+				const { data, error } = await client.GET('/api/user/queue/', {
 					headers: { Authorization: `Bearer ${token.value}` }
 				});
-				if (!userRes.ok) throw new Error('Failed to fetch user');
-				const user = await userRes.json();
-				currentUser = user.username;
 
-				const queueRes = await fetch('http://127.0.0.1:8000/api/user/queue/', {
-					headers: { Authorization: `Bearer ${token.value}` }
-				});
-				if (!queueRes.ok) throw new Error('Failed to fetch queue');
-				const data = await queueRes.json();
+				if (error) throw new Error('Failed to fetch queue');
 
-				queue = (data.queue || []).map((item: any) => ({
+				queue = (data || []).map((item: any) => ({
 					...item,
 					pageCount: item.page_count ?? undefined
 				}));
@@ -277,10 +279,10 @@
 			<h1 class="text-3xl font-bold tracking-tight">
 				{#if loading}
 					<Skeleton class="h-8 w-48" />
-				{:else if currentUser}
+				{:else}
 					PDF Processing Queue
 					<span class="ml-2 text-sm font-normal text-muted-foreground">
-						for {currentUser} ({totalPages}
+						for {user_username.value} ({totalPages}
 						{totalPages === 1 ? 'page' : 'pages'})
 					</span>
 				{/if}

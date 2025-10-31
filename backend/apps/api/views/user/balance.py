@@ -17,4 +17,4 @@ def get_balance(request: HttpRequest):
     """
     user = request.auth
     wallet = get_object_or_404(Wallet, user=user)
-    return BalanceResponse(balance=wallet.balance)
+    return BalanceResponse(balance=str(wallet.balance))

@@ -25,13 +25,12 @@ router = Router(tags=["User"])
 @login_required
 def get_user_transactions_by_username(
     request: HttpRequest,
-    username: str,
 ):
     """
     Get transaction history for a specific user by username.
     """
     # Get the target user by username
-    target_user = get_object_or_404(User, username=username)
+    target_user = get_object_or_404(User, username=request.auth.username)
 
     # Get transactions for the target user
     transactions = Transaction.objects.filter(user=target_user).order_by("-created_at")
