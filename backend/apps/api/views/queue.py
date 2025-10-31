@@ -135,27 +135,6 @@ def list_queue(request: HttpRequest):
     return QueueListResponse(queue=items)
 
 
-@router.get("{user_id}/", auth=AuthBearer())
-def list_queue_by_user(request: HttpRequest, user_id: int):
-    target_user = get_object_or_404(User, id=user_id)
-    queryset = Queue.objects.filter(user=target_user)
-
-    items = [
-        QueueFileResponse(
-            id=item.pk,
-            file=request.build_absolute_uri(item.file.url),
-            processed=item.processed,
-            created_at=item.created_at.isoformat(),
-            user=item.user.username,
-            user_id=item.user.pk,
-            page_count=item.page_count,
-        )
-        for item in queryset
-    ]
-
-    return QueueListResponse(queue=items)
-
-
 @router.delete(
     "delete/{queue_id}/",
     auth=AuthBearer(),
