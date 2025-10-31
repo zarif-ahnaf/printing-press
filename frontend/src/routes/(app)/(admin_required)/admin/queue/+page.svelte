@@ -65,10 +65,11 @@
 		created_at: string;
 		user: string;
 		user_id: number;
+		pageCount?: number;
+		print_mode: 'single-sided' | 'double-sided'; // from API
 		isMerged?: boolean;
 		mergedFrom?: string[];
 		hidden?: boolean;
-		pageCount?: number;
 		mergedId?: string;
 	}
 
@@ -88,6 +89,9 @@
 	let unprocessingItem = $state<Record<number, boolean>>({});
 	let expandedMergedItems = $state<Record<string, boolean>>({});
 	let itemPrintMode = $state<Record<number, 'duplex' | 'simplex'>>({});
+
+	// Dialog states
+	let confirmQueueDialogOpenFor = $state<string | null>(null);
 
 	const mergedPdfCache = createRefCountedCache<string>();
 	const fetchedPdfCache = createRefCountedCache<string>();
@@ -216,7 +220,7 @@
 		const files = Object.entries(selectedItems[user] || {})
 			.filter(([, checked]) => checked)
 			.map(([file]) => file);
-		if (files.length < 2) return; // Safety: should not happen due to UI guard
+		if (files.length < 2) return;
 
 		const cacheKey = hashFiles(files);
 		let blobUrl: string;
@@ -274,9 +278,15 @@
 	async function mergeAllForUserBackend(user: string) {
 		const userItems = groupedQueue[user] || [];
 		const filesToMerge = userItems
-			.filter((item) => !item.hidden && !item.isMerged)
+			.filter((item) => !item.hidden && !item.isMerged && itemPrintMode[item.id] === 'simplex')
 			.map((item) => item.file);
-		if (filesToMerge.length < 2) return; // Cannot merge <2 files
+		if (filesToMerge.length < 2) {
+			error =
+				filesToMerge.length === 0
+					? 'No simplex files to merge.'
+					: 'At least 2 simplex files required to merge.';
+			return;
+		}
 
 		const cacheKey = hashFiles(filesToMerge);
 		let blobUrl: string;
@@ -349,6 +359,7 @@
 			created_at: new Date().toISOString(),
 			user,
 			user_id: userItems[0]?.user_id ?? -1,
+			print_mode: 'single-sided', // merged PDFs are always simplex (charged)
 			isMerged: true,
 			mergedFrom: files,
 			hidden: false,
@@ -374,13 +385,15 @@
 				if (error) throw new Error('Failed to fetch queue');
 				queue = (data.queue || []).map((item: any) => ({
 					...item,
-					pageCount: item.page_count ?? undefined
+					pageCount: item.page_count ?? undefined,
+					print_mode: item.print_mode // e.g., "single-sided"
 				}));
 				groupedQueue = groupByUser(queue);
 				selectedItems = {};
 				itemPrintMode = {};
 				for (const item of queue) {
-					itemPrintMode[item.id] = 'duplex';
+					// Map backend print_mode to local UI state
+					itemPrintMode[item.id] = item.print_mode === 'single-sided' ? 'simplex' : 'duplex';
 				}
 				for (const user of Object.keys(groupedQueue)) {
 					selectedItems[user] = {};
@@ -481,15 +494,16 @@
 			const original = queue.find((q) => q.file === file && q.user === user);
 			return original
 				? { ...original, hidden: false }
-				: {
+				: ({
 						id: -1,
 						file,
 						processed: false,
 						created_at: new Date().toISOString(),
 						user,
 						user_id: mergedItem.user_id,
+						print_mode: 'double-sided' as const,
 						hidden: false
-					};
+					} satisfies QueueItem);
 		});
 
 		const restored = [...withoutMerged];
@@ -527,41 +541,7 @@
 	}
 
 	async function confirmSelectedItems(user: string) {
-		const userItems = groupedQueue[user] || [];
-		const selectedItemsForUser = selectedItems[user] || {};
-		const itemsToConfirm = userItems.filter(
-			(item) => !item.hidden && !item.processed && !item.isMerged && selectedItemsForUser[item.file]
-		);
-		if (itemsToConfirm.length === 0) return;
-
-		confirmingSelected = { ...confirmingSelected, [user]: true };
-		try {
-			for (const item of itemsToConfirm) {
-				const { data: result, error } = await client.POST('/api/queue/{queue_id}/processed', {
-					params: {
-						path: {
-							queue_id: item.id
-						}
-					},
-					headers: { Authorization: `Bearer ${token.value}` }
-				});
-
-				if (error) {
-					throw new Error(error || `Confirm failed for ${item.id}`);
-				}
-				if (result.processed) {
-					const userQueue = groupedQueue[user] || [];
-					const idx = userQueue.findIndex((i) => i.id === item.id);
-					if (idx !== -1) userQueue[idx] = { ...userQueue[idx], processed: true };
-					groupedQueue = { ...groupedQueue, [user]: userQueue };
-				}
-			}
-			selectedItems = { ...selectedItems, [user]: {} };
-		} catch (err) {
-			error = err instanceof Error ? `Confirm error: ${err.message}` : 'Confirm failed';
-		} finally {
-			confirmingSelected = { ...confirmingSelected, [user]: false };
-		}
+		confirmQueueDialogOpenFor = user;
 	}
 
 	async function unprocessItem(item: QueueItem) {
@@ -699,40 +679,23 @@
 								</h2>
 							</div>
 							<div class="flex flex-wrap gap-2">
-								<!-- Unified Merge Button: only shown if ≥2 mergeable items exist -->
+								<!-- Unified Merge Button -->
 								{#if items.filter((i) => !i.hidden && !i.isMerged).length >= 2}
-									{#if selectedItems[user]}
-										{#if Object.values(selectedItems[user]).filter(Boolean).length >= 2}
-											<Button
-												variant="default"
-												size="sm"
-												disabled={merging[user] ||
-													mergingAllForUser[user] ||
-													Object.values(mergingFiles).some((v) => v)}
-												onclick={() => mergePdfsBackend(user)}
-											>
-												{#if merging[user] || mergingAllForUser[user]}
-													<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Merging...
-												{:else}
-													<Merge class="mr-2 h-4 w-4" /> Merge Selected
-												{/if}
-											</Button>
-										{:else}
-											<Button
-												variant="default"
-												size="sm"
-												disabled={merging[user] ||
-													mergingAllForUser[user] ||
-													Object.values(mergingFiles).some((v) => v)}
-												onclick={() => mergeAllForUserBackend(user)}
-											>
-												{#if merging[user] || mergingAllForUser[user]}
-													<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Merging...
-												{:else}
-													<Merge class="mr-2 h-4 w-4" /> Merge All
-												{/if}
-											</Button>
-										{/if}
+									{#if selectedItems[user] && Object.values(selectedItems[user]).filter(Boolean).length >= 2}
+										<Button
+											variant="default"
+											size="sm"
+											disabled={merging[user] ||
+												mergingAllForUser[user] ||
+												Object.values(mergingFiles).some((v) => v)}
+											onclick={() => mergePdfsBackend(user)}
+										>
+											{#if merging[user] || mergingAllForUser[user]}
+												<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Merging...
+											{:else}
+												<Merge class="mr-2 h-4 w-4" /> Merge Selected
+											{/if}
+										</Button>
 									{:else}
 										<Button
 											variant="default"
@@ -751,7 +714,6 @@
 									{/if}
 								{/if}
 
-								<!-- Confirm Selected -->
 								<Button
 									variant="outline"
 									size="sm"
@@ -850,7 +812,7 @@
 											<TableCell>{new Date(item.created_at).toLocaleString()}</TableCell>
 
 											<TableCell>
-												{#if !item.isMerged}
+												{#if !item.isMerged && !item.hidden}
 													<div class="flex items-center gap-2">
 														<Tooltip>
 															<TooltipTrigger>
@@ -860,8 +822,7 @@
 																		: 'outline'}
 																	size="sm"
 																	class="h-8 w-8 p-0"
-																	onclick={() =>
-																		(itemPrintMode = { ...itemPrintMode, [item.id]: 'duplex' })}
+																	onclick={() => (itemPrintMode[item.id] = 'duplex')}
 																>
 																	<Repeat class="h-4 w-4" />
 																</Button>
@@ -876,8 +837,7 @@
 																		: 'outline'}
 																	size="sm"
 																	class="h-8 w-8 p-0"
-																	onclick={() =>
-																		(itemPrintMode = { ...itemPrintMode, [item.id]: 'simplex' })}
+																	onclick={() => (itemPrintMode[item.id] = 'simplex')}
 																>
 																	<FileText class="h-4 w-4" />
 																</Button>
@@ -892,7 +852,6 @@
 												{/if}
 											</TableCell>
 
-											<!-- Responsive Actions Cell -->
 											<TableCell class="text-right">
 												<!-- Desktop -->
 												<div class="hidden justify-end gap-2 md:flex">
@@ -1010,7 +969,7 @@
 													{/if}
 												</div>
 
-												<!-- Mobile/Medium -->
+												<!-- Mobile -->
 												<div class="md:hidden">
 													<DropdownMenu>
 														<DropdownMenuTrigger>

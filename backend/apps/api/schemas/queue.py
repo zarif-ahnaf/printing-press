@@ -15,6 +15,7 @@ class QueueFileResponse(Schema):
     user: str
     user_id: int
     page_count: Optional[int]
+    print_mode: Literal["single-sided", "double-sided"]
 
 
 class QueueListResponse(Schema):
