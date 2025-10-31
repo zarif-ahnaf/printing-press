@@ -7,17 +7,8 @@ export default defineConfig({
 	build: {
 		sourcemap: true,
 		minify: 'terser',
-		terserOptions: {
-			keep_classnames: false,
-			keep_fnames: false,
-			output: {
-				ecma: 5,
-				comments: false, // Remove all comments
-				beautify: false // Ensure minified output
-			}
-		},
-		target: 'es6',
-		cssTarget: 'es6',
+		target: 'esnext',
+		cssTarget: 'esnext',
 		chunkSizeWarningLimit: 2048,
 		emptyOutDir: true
 	}

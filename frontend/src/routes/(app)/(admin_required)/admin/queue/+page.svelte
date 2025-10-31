@@ -92,6 +92,13 @@
 
 	// Dialog states
 	let confirmQueueDialogOpenFor = $state<string | null>(null);
+	let printModeChangeDialog = $state<{
+		item: QueueItem;
+		targetMode: 'simplex' | 'duplex';
+		dontRemind: boolean;
+	} | null>(null);
+	let finalConfirmDialog = $state<{ user: string; items: QueueItem[] } | null>(null);
+	let userPrintModeReminderDisabled = $state<Record<string, boolean>>({});
 
 	const mergedPdfCache = createRefCountedCache<string>();
 	const fetchedPdfCache = createRefCountedCache<string>();
@@ -540,8 +547,41 @@
 		}
 	}
 
+	function requestPrintModeChange(item: QueueItem, mode: 'simplex' | 'duplex') {
+		if (itemPrintMode[item.id] === mode) return;
+		if (userPrintModeReminderDisabled[item.user]) {
+			itemPrintMode[item.id] = mode;
+			return;
+		}
+		printModeChangeDialog = { item, targetMode: mode, dontRemind: false };
+	}
+
+	function applyPrintModeChange() {
+		if (!printModeChangeDialog) return;
+		const { item, targetMode, dontRemind } = printModeChangeDialog;
+		itemPrintMode[item.id] = targetMode;
+		if (dontRemind) {
+			userPrintModeReminderDisabled[item.user] = true;
+		}
+		printModeChangeDialog = null;
+	}
+
 	async function confirmSelectedItems(user: string) {
-		confirmQueueDialogOpenFor = user;
+		const selected = (groupedQueue[user] || []).filter(
+			(item) => !item.hidden && !item.isMerged && selectedItems[user]?.[item.file]
+		);
+		if (selected.length === 0) return;
+		finalConfirmDialog = { user, items: selected };
+	}
+
+	async function executeFinalConfirm() {
+		if (!finalConfirmDialog) return;
+		const { user, items } = finalConfirmDialog;
+		for (const item of items) {
+			await confirmItem(item);
+		}
+		finalConfirmDialog = null;
+		selectedItems[user] = {};
 	}
 
 	async function unprocessItem(item: QueueItem) {
@@ -621,6 +661,76 @@
 		fetchedPdfCache.evictAll();
 	});
 </script>
+
+<!-- Print Mode Change Confirmation Dialog -->
+<Dialog
+	open={!!printModeChangeDialog}
+	onOpenChange={(open) => !open && (printModeChangeDialog = null)}
+>
+	<DialogContent>
+		<DialogHeader>
+			<DialogTitle>Change Print Mode?</DialogTitle>
+		</DialogHeader>
+		<Alert variant="warning" class="mb-4">
+			<AlertDescription>
+				{printModeChangeDialog?.targetMode === 'simplex'
+					? 'This will charge 1 taka per sheet (rounded up to even pages).'
+					: 'This will print double-sided for free.'}
+			</AlertDescription>
+		</Alert>
+		<div class="flex items-center space-x-2">
+			<Checkbox
+				id="dont-remind"
+				checked={printModeChangeDialog?.dontRemind ?? false}
+				onCheckedChange={(checked) => {
+					if (printModeChangeDialog) {
+						printModeChangeDialog = { ...printModeChangeDialog, dontRemind: checked };
+					}
+				}}
+			/>
+			<label for="dont-remind" class="text-sm text-muted-foreground">
+				Don’t show this again for {printModeChangeDialog?.item.user} (until refresh)
+			</label>
+		</div>
+		<DialogFooter class="pt-4">
+			<DialogClose>
+				<Button variant="outline">Cancel</Button>
+			</DialogClose>
+			<Button variant="default" onclick={applyPrintModeChange}>Confirm Change</Button>
+		</DialogFooter>
+	</DialogContent>
+</Dialog>
+
+<!-- Final Confirm All Dialog -->
+<Dialog open={!!finalConfirmDialog} onOpenChange={(open) => !open && (finalConfirmDialog = null)}>
+	<DialogContent class="max-h-[80vh] overflow-y-auto">
+		<DialogHeader>
+			<DialogTitle>Confirm Selected Items</DialogTitle>
+		</DialogHeader>
+		<div class="space-y-3 py-4">
+			<p class="text-sm text-muted-foreground">
+				You are about to mark the following {finalConfirmDialog?.items.length} item(s) as processed:
+			</p>
+			<ul class="space-y-2">
+				{#each finalConfirmDialog?.items || [] as item}
+					<li class="flex items-start gap-2 text-sm">
+						<FileText class="mt-0.5 h-3 w-3 flex-shrink-0 text-muted-foreground" />
+						<span class="font-medium">{item.file.split('/').pop()}</span>
+						<span class="text-xs text-muted-foreground">
+							({itemPrintMode[item.id] === 'simplex' ? 'Simplex' : 'Duplex'})
+						</span>
+					</li>
+				{/each}
+			</ul>
+		</div>
+		<DialogFooter>
+			<DialogClose>
+				<Button variant="outline">Cancel</Button>
+			</DialogClose>
+			<Button variant="default" onclick={executeFinalConfirm}>Confirm All</Button>
+		</DialogFooter>
+	</DialogContent>
+</Dialog>
 
 <!-- Preview Dialog -->
 <Dialog open={!!previewUrl} onOpenChange={(open) => !open && closePreview()}>
@@ -822,7 +932,7 @@
 																		: 'outline'}
 																	size="sm"
 																	class="h-8 w-8 p-0"
-																	onclick={() => (itemPrintMode[item.id] = 'duplex')}
+																	onclick={() => requestPrintModeChange(item, 'duplex')}
 																>
 																	<Repeat class="h-4 w-4" />
 																</Button>
@@ -837,7 +947,7 @@
 																		: 'outline'}
 																	size="sm"
 																	class="h-8 w-8 p-0"
-																	onclick={() => (itemPrintMode[item.id] = 'simplex')}
+																	onclick={() => requestPrintModeChange(item, 'simplex')}
 																>
 																	<FileText class="h-4 w-4" />
 																</Button>
