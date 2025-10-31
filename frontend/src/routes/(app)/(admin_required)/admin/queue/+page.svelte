@@ -58,6 +58,13 @@
 	import { cn } from '$lib/utils';
 	import { client } from '$lib/client';
 
+	// Enhanced interface to preserve original state and positions
+	interface MergedQueueItem extends QueueItem {
+		originalItems: QueueItem[];
+		originalIndices: number[];
+		mergedFromFiles: string[];
+	}
+
 	interface QueueItem {
 		id: number;
 		file: string;
@@ -71,6 +78,10 @@
 		mergedFrom?: string[];
 		hidden?: boolean;
 		mergedId?: string;
+		// Added for proper restoration
+		originalItems?: QueueItem[];
+		originalIndices?: number[];
+		mergedFromFiles?: string[];
 	}
 
 	let queue = $state<QueueItem[]>([]);
@@ -224,12 +235,25 @@
 	}
 
 	async function mergePdfsBackend(user: string) {
-		const files = Object.entries(selectedItems[user] || {})
+		// Filter to only include simplex items
+		const simplexFiles = Object.entries(selectedItems[user] || {})
 			.filter(([, checked]) => checked)
-			.map(([file]) => file);
-		if (files.length < 2) return;
+			.map(([file]) => file)
+			.filter((file) => {
+				const item = (groupedQueue[user] || []).find((i) => i.file === file);
+				return item && itemPrintMode[item.id] === 'simplex';
+			});
 
-		const cacheKey = hashFiles(files);
+		if (simplexFiles.length < 2) {
+			if (simplexFiles.length === 1) {
+				error = 'At least 2 simplex files required to merge';
+			} else {
+				error = 'No simplex files selected to merge';
+			}
+			return;
+		}
+
+		const cacheKey = hashFiles(simplexFiles);
 		let blobUrl: string;
 
 		if (mergedPdfCache.has(cacheKey)) {
@@ -239,12 +263,12 @@
 			const userItems = groupedQueue[user] || [];
 			merging = { ...merging, [user]: true };
 			mergingFiles = { ...mergingFiles };
-			for (const f of files) mergingFiles[f] = true;
+			for (const f of simplexFiles) mergingFiles[f] = true;
 
 			try {
 				const formData = new FormData();
 				const blobUrlsToRelease: string[] = [];
-				for (const url of files) {
+				for (const url of simplexFiles) {
 					const bUrl = await fetchAndCachePdf(url);
 					blobUrlsToRelease.push(bUrl);
 					const res = await fetch(bUrl);
@@ -274,11 +298,11 @@
 			} finally {
 				merging = { ...merging, [user]: false };
 				mergingFiles = { ...mergingFiles };
-				for (const f of files) delete mergingFiles[f];
+				for (const f of simplexFiles) delete mergingFiles[f];
 			}
 		}
 
-		insertMergedItem(user, files, blobUrl);
+		insertMergedItem(user, simplexFiles, blobUrl);
 		selectedItems = { ...selectedItems, [user]: {} };
 	}
 
@@ -350,16 +374,23 @@
 	function insertMergedItem(user: string, files: string[], url: string) {
 		const userItems = groupedQueue[user] || [];
 		const selectedIndices: number[] = [];
+		const originals: QueueItem[] = [];
+
 		for (const [idx, item] of userItems.entries()) {
-			if (files.includes(item.file)) selectedIndices.push(idx);
+			if (files.includes(item.file)) {
+				selectedIndices.push(idx);
+				// Preserve full state of originals
+				originals.push({ ...item });
+			}
 		}
+
 		const maxIndex =
 			selectedIndices.length > 0 ? Math.max(...selectedIndices) : userItems.length - 1;
 		const insertIndex = maxIndex + 1;
 
 		const mergedId = `merged_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 
-		const mergedItem: QueueItem = {
+		const mergedItem: MergedQueueItem = {
 			id: -1,
 			file: url,
 			processed: true,
@@ -369,9 +400,12 @@
 			print_mode: 'single-sided', // merged PDFs are always simplex (charged)
 			isMerged: true,
 			mergedFrom: files,
+			mergedFromFiles: files,
 			hidden: false,
 			mergedId,
-			pageCount: undefined
+			pageCount: undefined,
+			originalItems: originals,
+			originalIndices: selectedIndices // Store original positions
 		};
 
 		const updatedItems = userItems.map((item) =>
@@ -489,34 +523,43 @@
 		const mergedIndex = userItems.findIndex((item) => item.file === fileUrl && item.isMerged);
 		if (mergedIndex === -1) return;
 
-		const mergedItem = userItems[mergedIndex];
-		if (!mergedItem.mergedFrom || !mergedItem.mergedId) return;
+		const mergedItem = userItems[mergedIndex] as MergedQueueItem;
+		if (
+			!mergedItem.mergedFrom ||
+			!mergedItem.mergedId ||
+			!mergedItem.originalItems ||
+			!mergedItem.originalIndices
+		)
+			return;
 
 		releasePdfBlob(fileUrl);
 
+		// Remove the merged item
 		const withoutMerged = [...userItems];
 		withoutMerged.splice(mergedIndex, 1);
 
-		const restoredOriginals = mergedItem.mergedFrom.map((file) => {
-			const original = queue.find((q) => q.file === file && q.user === user);
-			return original
-				? { ...original, hidden: false }
-				: ({
-						id: -1,
-						file,
-						processed: false,
-						created_at: new Date().toISOString(),
-						user,
-						user_id: mergedItem.user_id,
-						print_mode: 'double-sided' as const,
-						hidden: false
-					} satisfies QueueItem);
-		});
+		// Restore hidden originals from preserved state
+		const restoredOriginals = mergedItem.originalItems.map((original) => ({
+			...original,
+			hidden: false
+		}));
 
-		const restored = [...withoutMerged];
-		restored.splice(mergedIndex, 0, ...restoredOriginals);
-		groupedQueue = { ...groupedQueue, [user]: restored };
+		// Create a new array with restored items at their original positions
+		let newUserItems = [...withoutMerged];
 
+		// Add each original item back at its original index
+		// Sort originalIndices in descending order to avoid index shifting issues
+		[...mergedItem.originalIndices]
+			.sort((a, b) => b - a)
+			.forEach((originalIndex, i) => {
+				// If the original index is before where the merged item was, adjust for the removed merged item
+				const adjustedIndex = originalIndex < mergedIndex ? originalIndex : originalIndex - 1;
+				// Insert the corresponding original item at the adjusted index
+				newUserItems.splice(adjustedIndex, 0, restoredOriginals[i]);
+			});
+
+		// Update state with new array
+		groupedQueue = { ...groupedQueue, [user]: newUserItems };
 		selectedItems = { ...selectedItems, [user]: {} };
 	}
 
@@ -601,10 +644,12 @@
 			if (error) {
 				throw new Error(error || `Unprocess failed for ${id}`);
 			}
-			const userQueue = groupedQueue[user] || [];
-			const idx = userQueue.findIndex((i) => i.id === id);
-			if (idx !== -1) userQueue[idx] = { ...userQueue[idx], processed: false };
-			groupedQueue = { ...groupedQueue, [user]: userQueue };
+
+			// Create new array with updated item
+			const newUserItems = groupedQueue[user].map((i) =>
+				i.id === id ? { ...i, processed: false } : i
+			);
+			groupedQueue = { ...groupedQueue, [user]: newUserItems };
 		} catch (err) {
 			error = err instanceof Error ? `Unprocess error: ${err.message}` : 'Unprocess failed';
 		} finally {
@@ -630,10 +675,11 @@
 				throw new Error(error || `Confirm failed for ${id}`);
 			}
 			if (result.processed) {
-				const userQueue = groupedQueue[user] || [];
-				const idx = userQueue.findIndex((i) => i.id === id);
-				if (idx !== -1) userQueue[idx] = { ...userQueue[idx], processed: true };
-				groupedQueue = { ...groupedQueue, [user]: userQueue };
+				// Create new array with updated item
+				const newUserItems = groupedQueue[user].map((i) =>
+					i.id === id ? { ...i, processed: true } : i
+				);
+				groupedQueue = { ...groupedQueue, [user]: newUserItems };
 			}
 		} catch (err) {
 			error = err instanceof Error ? `Confirm error: ${err.message}` : 'Confirm failed';
@@ -671,7 +717,7 @@
 		<DialogHeader>
 			<DialogTitle>Change Print Mode?</DialogTitle>
 		</DialogHeader>
-		<Alert variant="warning" class="mb-4">
+		<Alert variant="destructive" class="mb-4">
 			<AlertDescription>
 				{printModeChangeDialog?.targetMode === 'simplex'
 					? 'This will charge 1 taka per sheet (rounded up to even pages).'
