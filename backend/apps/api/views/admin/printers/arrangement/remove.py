@@ -12,7 +12,7 @@ from .....schemas.printer_arrangement import (
 router = Router(tags=["Admin Printer Arrangements"])
 
 
-@router.delete("{id}/", response=PrinterArrangementDeleteSchema)
+@router.delete("{id}", response=PrinterArrangementDeleteSchema)
 @admin_required
 def printer_arrangements_remove(
     request: HttpRequest,

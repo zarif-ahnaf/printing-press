@@ -3,6 +3,7 @@ from ninja import File, Form, Router, UploadedFile
 
 from apps.printers.models import Printers
 
+from ....auth import AuthBearer
 from ....decorators import admin_required
 from ....http import HttpRequest
 from ....schemas.printer import (
@@ -14,30 +15,28 @@ from ....schemas.printer import (
 router = Router(tags=["Admin Printers"])
 
 
-@router.patch("{printer_id}/", response=PrinterOutSchema)
+@router.patch("{printer_id}", auth=AuthBearer(), response=PrinterOutSchema)
 @admin_required
 def printers_update(
     request: HttpRequest,
     printer_id: int,
+    payload: Form[PrinterCreateSchema],
     image: File[UploadedFile] | None = None,
-    payload: Form[PrinterCreateSchema] | None = None,
 ):
     printer = get_object_or_404(Printers, id=printer_id)
-
-    if payload:
-        printer.name = payload.name
-        printer.is_color = payload.is_color
-        printer.simplex_charge = payload.simplex_charge
-        printer.duplex_charge = payload.duplex_charge
-
+    printer.name = payload.name
+    printer.is_color = payload.is_color
+    printer.simplex_charge = payload.simplex_charge
+    printer.duplex_charge = payload.duplex_charge
     if image:
         printer.image = image
-
     printer.save()
     return printer
 
 
-@router.delete("{printer_id}/decomission", response=PrinterDecomissionSchema)
+@router.delete(
+    "{printer_id}/decomission", auth=AuthBearer(), response=PrinterDecomissionSchema
+)
 @admin_required
 def printers_decomission(
     request: HttpRequest,
@@ -53,7 +52,9 @@ def printers_decomission(
     )
 
 
-@router.post("{printer_id}/decomission", response=PrinterDecomissionSchema)
+@router.post(
+    "{printer_id}/decomission", auth=AuthBearer(), response=PrinterDecomissionSchema
+)
 @admin_required
 def printers_recommission(
     request: HttpRequest,

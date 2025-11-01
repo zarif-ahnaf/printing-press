@@ -17,8 +17,12 @@ def admin_required(view_func):
 
     @wraps(view_func)
     def wrapper(request: HttpRequest, *args, **kwargs):
+        if not hasattr(request, "auth"):
+            raise ValueError(
+                "Decorator object has no 'auth' attribute. Ensure authentication is set up correctly."
+            )
+
         user = request.auth
-        print(request.auth)
 
         if not hasattr(user, "is_staff") or isinstance(user, AnonymousUser):
             raise HttpError(401, "Authentication required.")

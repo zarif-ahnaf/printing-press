@@ -10,7 +10,7 @@ from ...utils.pdf import (
 router = Router(tags=["PDF"])
 
 
-@router.post("/color/")
+@router.post("/color")
 def split_color(request: HttpRequest, file: File[UploadedFile]):
     pdf_bytes = file.read()
     color_pdf = split_pdf_into_colored_pages(pdf_bytes)
@@ -19,7 +19,7 @@ def split_color(request: HttpRequest, file: File[UploadedFile]):
     return response
 
 
-@router.post("/grayscale/")
+@router.post("/grayscale")
 def split_grayscale(request: HttpRequest, file: File[UploadedFile]):
     pdf_bytes = file.read()
     gray_pdf = split_pdf_into_black_and_white_pages(pdf_bytes)

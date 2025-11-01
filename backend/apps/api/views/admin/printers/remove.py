@@ -10,7 +10,7 @@ from ....schemas.printer import PrinterDeleteSchema
 router = Router(tags=["Admin Printers"])
 
 
-@router.post("{id}/", response=PrinterDeleteSchema)
+@router.post("{id}", response=PrinterDeleteSchema)
 @admin_required
 def printer_remove(request: HttpRequest, id: int):
     printer = get_object_or_404(Printers, id=id)
