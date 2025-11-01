@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { onDestroy } from 'svelte';
-
 	// UI Components
 	import {
 		Table,
@@ -35,7 +34,6 @@
 		DropdownMenuSeparator,
 		DropdownMenuTrigger
 	} from '$lib/components/ui/dropdown-menu';
-
 	// Lucide Icons
 	import {
 		FileText,
@@ -51,14 +49,12 @@
 		CreditCard,
 		Repeat
 	} from 'lucide-svelte';
-
 	import { MERGE_ENDPOINT } from '$lib/constants/backend';
 	import { token } from '$lib/stores/token.svelte';
 	import { createRefCountedCache } from '$lib/cache/createRefCountedCache';
 	import { cn } from '$lib/utils';
 	import { client } from '$lib/client';
 
-	// Enhanced interface to preserve original state and positions
 	interface MergedQueueItem extends QueueItem {
 		originalItems: QueueItem[];
 		originalIndices: number[];
@@ -73,12 +69,11 @@
 		user: string;
 		user_id: number;
 		pageCount?: number;
-		print_mode: 'single-sided' | 'double-sided'; // from API
+		print_mode: 'single-sided' | 'double-sided';
 		isMerged?: boolean;
 		mergedFrom?: string[];
 		hidden?: boolean;
 		mergedId?: string;
-		// Added for proper restoration
 		originalItems?: QueueItem[];
 		originalIndices?: number[];
 		mergedFromFiles?: string[];
@@ -110,6 +105,7 @@
 	} | null>(null);
 	let finalConfirmDialog = $state<{ user: string; items: QueueItem[] } | null>(null);
 	let userPrintModeReminderDisabled = $state<Record<string, boolean>>({});
+	let isUnconfirmMode = $state(false);
 
 	const mergedPdfCache = createRefCountedCache<string>();
 	const fetchedPdfCache = createRefCountedCache<string>();
@@ -146,7 +142,6 @@
 
 	function releasePdfBlob(url: string): void {
 		if (!url.startsWith('blob:')) return;
-
 		for (const [key, blobUrl] of mergedPdfCache.entries()) {
 			if (blobUrl === url) {
 				if (mergedPdfCache.decrementRef(key)) URL.revokeObjectURL(url);
@@ -165,10 +160,8 @@
 		if (!item.pageCount) return false;
 		const mode = itemPrintMode[item.id] || 'duplex';
 		if (mode !== 'simplex') return true;
-
 		const sheets = item.pageCount % 2 === 0 ? item.pageCount : item.pageCount + 1;
 		if (sheets <= 0) return true;
-
 		charging = { ...charging, [item.id]: true };
 		try {
 			const { data, error } = await client.POST('/api/charge/{username}', {
@@ -184,7 +177,6 @@
 					description: `Simplex printing: ${item.file.split('/').pop()} (${item.pageCount} pages → ${sheets} sheets)`
 				}
 			});
-
 			if (error) {
 				throw new Error('Charge failed');
 			}
@@ -201,11 +193,9 @@
 	async function printPdf(item: QueueItem) {
 		const { id, file } = item;
 		printing = { ...printing, [id]: true };
-
 		try {
 			const charged = await chargeForPdf(item);
 			if (!charged) return;
-
 			const pdfBlobUrl = await fetchAndCachePdf(file);
 			const iframe = document.createElement('iframe');
 			iframe.style.position = 'absolute';
@@ -215,15 +205,12 @@
 			iframe.style.height = '0';
 			iframe.setAttribute('aria-hidden', 'true');
 			iframe.src = pdfBlobUrl;
-
 			await new Promise<void>((resolve, reject) => {
 				iframe.onload = () => resolve();
 				iframe.onerror = () => reject(new Error('PDF load failed'));
 				document.body.appendChild(iframe);
 			});
-
 			iframe.contentWindow?.print();
-
 			setTimeout(() => {
 				if (document.body.contains(iframe)) document.body.removeChild(iframe);
 			}, 10000);
@@ -235,7 +222,6 @@
 	}
 
 	async function mergePdfsBackend(user: string) {
-		// Filter to only include simplex items
 		const simplexFiles = Object.entries(selectedItems[user] || {})
 			.filter(([, checked]) => checked)
 			.map(([file]) => file)
@@ -243,19 +229,15 @@
 				const item = (groupedQueue[user] || []).find((i) => i.file === file);
 				return item && itemPrintMode[item.id] === 'simplex';
 			});
-
 		if (simplexFiles.length < 2) {
-			if (simplexFiles.length === 1) {
-				error = 'At least 2 simplex files required to merge';
-			} else {
-				error = 'No simplex files selected to merge';
-			}
+			error =
+				simplexFiles.length === 1
+					? 'At least 2 simplex files required to merge'
+					: 'No simplex files selected to merge';
 			return;
 		}
-
 		const cacheKey = hashFiles(simplexFiles);
 		let blobUrl: string;
-
 		if (mergedPdfCache.has(cacheKey)) {
 			mergedPdfCache.incrementRef(cacheKey);
 			blobUrl = mergedPdfCache.get(cacheKey)!;
@@ -264,7 +246,6 @@
 			merging = { ...merging, [user]: true };
 			mergingFiles = { ...mergingFiles };
 			for (const f of simplexFiles) mergingFiles[f] = true;
-
 			try {
 				const formData = new FormData();
 				const blobUrlsToRelease: string[] = [];
@@ -275,18 +256,15 @@
 					const blob = await res.blob();
 					formData.append('files', blob, url.split('/').pop() || 'file.pdf');
 				}
-
 				const mergeRes = await fetch(MERGE_ENDPOINT, {
 					method: 'POST',
 					body: formData,
 					headers: { Authorization: `Bearer ${token.value}` }
 				});
-
 				if (!mergeRes.ok) {
 					const text = await mergeRes.text();
 					throw new Error(`Merge failed: ${text}`);
 				}
-
 				const mergedBlob = await mergeRes.blob();
 				blobUrl = URL.createObjectURL(mergedBlob);
 				mergedPdfCache.set(cacheKey, blobUrl);
@@ -301,73 +279,7 @@
 				for (const f of simplexFiles) delete mergingFiles[f];
 			}
 		}
-
 		insertMergedItem(user, simplexFiles, blobUrl);
-		selectedItems = { ...selectedItems, [user]: {} };
-	}
-
-	async function mergeAllForUserBackend(user: string) {
-		const userItems = groupedQueue[user] || [];
-		const filesToMerge = userItems
-			.filter((item) => !item.hidden && !item.isMerged && itemPrintMode[item.id] === 'simplex')
-			.map((item) => item.file);
-		if (filesToMerge.length < 2) {
-			error =
-				filesToMerge.length === 0
-					? 'No simplex files to merge.'
-					: 'At least 2 simplex files required to merge.';
-			return;
-		}
-
-		const cacheKey = hashFiles(filesToMerge);
-		let blobUrl: string;
-
-		if (mergedPdfCache.has(cacheKey)) {
-			mergedPdfCache.incrementRef(cacheKey);
-			blobUrl = mergedPdfCache.get(cacheKey)!;
-		} else {
-			mergingAllForUser = { ...mergingAllForUser, [user]: true };
-			mergingFiles = { ...mergingFiles };
-			for (const f of filesToMerge) mergingFiles[f] = true;
-
-			try {
-				const formData = new FormData();
-				const blobUrlsToRelease: string[] = [];
-				for (const url of filesToMerge) {
-					const bUrl = await fetchAndCachePdf(url);
-					blobUrlsToRelease.push(bUrl);
-					const res = await fetch(bUrl);
-					const blob = await res.blob();
-					formData.append('files', blob, url.split('/').pop() || 'file.pdf');
-				}
-
-				const mergeRes = await fetch(MERGE_ENDPOINT, {
-					method: 'POST',
-					body: formData,
-					headers: { Authorization: `Bearer ${token.value}` }
-				});
-
-				if (!mergeRes.ok) {
-					const text = await mergeRes.text();
-					throw new Error(`Merge failed: ${text}`);
-				}
-
-				const mergedBlob = await mergeRes.blob();
-				blobUrl = URL.createObjectURL(mergedBlob);
-				mergedPdfCache.set(cacheKey, blobUrl);
-				mergedPdfCache.incrementRef(cacheKey);
-				blobUrlsToRelease.forEach(releasePdfBlob);
-			} catch (err) {
-				error = err instanceof Error ? `Merge error: ${err.message}` : 'Merge failed';
-				return;
-			} finally {
-				mergingAllForUser = { ...mergingAllForUser, [user]: false };
-				mergingFiles = { ...mergingFiles };
-				for (const f of filesToMerge) delete mergingFiles[f];
-			}
-		}
-
-		insertMergedItem(user, filesToMerge, blobUrl);
 		selectedItems = { ...selectedItems, [user]: {} };
 	}
 
@@ -375,21 +287,16 @@
 		const userItems = groupedQueue[user] || [];
 		const selectedIndices: number[] = [];
 		const originals: QueueItem[] = [];
-
 		for (const [idx, item] of userItems.entries()) {
 			if (files.includes(item.file)) {
 				selectedIndices.push(idx);
-				// Preserve full state of originals
 				originals.push({ ...item });
 			}
 		}
-
 		const maxIndex =
 			selectedIndices.length > 0 ? Math.max(...selectedIndices) : userItems.length - 1;
 		const insertIndex = maxIndex + 1;
-
 		const mergedId = `merged_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
-
 		const mergedItem: MergedQueueItem = {
 			id: -1,
 			file: url,
@@ -397,7 +304,7 @@
 			created_at: new Date().toISOString(),
 			user,
 			user_id: userItems[0]?.user_id ?? -1,
-			print_mode: 'single-sided', // merged PDFs are always simplex (charged)
+			print_mode: 'single-sided',
 			isMerged: true,
 			mergedFrom: files,
 			mergedFromFiles: files,
@@ -405,9 +312,8 @@
 			mergedId,
 			pageCount: undefined,
 			originalItems: originals,
-			originalIndices: selectedIndices // Store original positions
+			originalIndices: selectedIndices
 		};
-
 		const updatedItems = userItems.map((item) =>
 			files.includes(item.file) ? { ...item, hidden: true } : item
 		);
@@ -427,13 +333,12 @@
 				queue = (data.queue || []).map((item: any) => ({
 					...item,
 					pageCount: item.page_count ?? undefined,
-					print_mode: item.print_mode // e.g., "single-sided"
+					print_mode: item.print_mode
 				}));
 				groupedQueue = groupByUser(queue);
 				selectedItems = {};
 				itemPrintMode = {};
 				for (const item of queue) {
-					// Map backend print_mode to local UI state
 					itemPrintMode[item.id] = item.print_mode === 'single-sided' ? 'simplex' : 'duplex';
 				}
 				for (const user of Object.keys(groupedQueue)) {
@@ -451,11 +356,9 @@
 	$effect(() => {
 		for (const [user, items] of Object.entries(groupedQueue)) {
 			for (const item of items) {
-				if (!item.isMerged || !item.mergedFrom || !item.mergedId) continue;
-
+				if (item.hidden || !item.isMerged || !item.mergedFrom || !item.mergedId) continue;
 				let total = 0;
 				let allResolved = true;
-
 				for (const sourceFile of item.mergedFrom) {
 					const sourceItem = items.find((i) => i.file === sourceFile && !i.isMerged);
 					if (!sourceItem) {
@@ -473,7 +376,6 @@
 						total += 1;
 					}
 				}
-
 				if (allResolved && item.pageCount !== total) {
 					const idx = items.findIndex((i) => i.mergedId === item.mergedId);
 					if (idx !== -1) {
@@ -496,7 +398,6 @@
 	});
 
 	let userPageTotals = $state<Record<string, number>>({});
-
 	$effect(() => {
 		const newTotals: Record<string, number> = {};
 		for (const [user, items] of Object.entries(groupedQueue)) {
@@ -510,19 +411,79 @@
 		userPageTotals = newTotals;
 	});
 
+	// ✅ Updated: Exclusive selection state for confirm/unconfirm
+	let userSelectionState = $derived(
+		Object.fromEntries(
+			Object.entries(groupedQueue).map(([user, items]) => {
+				const currentSelection = selectedItems[user] || {};
+				const selectedNonMerged = items.filter(
+					(item) => !item.hidden && !item.isMerged && currentSelection[item.file]
+				);
+
+				if (selectedNonMerged.length === 0) {
+					return [user, { action: null as 'confirm' | 'unconfirm' | null }];
+				}
+
+				const allUnconfirmed = selectedNonMerged.every((item) => !item.processed);
+				const allConfirmed = selectedNonMerged.every((item) => item.processed);
+
+				if (allUnconfirmed) {
+					return [user, { action: 'confirm' }];
+				} else if (allConfirmed) {
+					return [user, { action: 'unconfirm' }];
+				} else {
+					return [user, { action: null }];
+				}
+			})
+		)
+	);
+
+	function getShouldDisable(user: string, item: QueueItem): boolean {
+		const currentSelection = selectedItems[user] || {};
+		const hasSelection = Object.values(currentSelection).some((v) => v);
+		if (!hasSelection) return false;
+		let selectedState: boolean | null = null;
+		for (const [f, sel] of Object.entries(currentSelection)) {
+			if (sel) {
+				const it = (groupedQueue[user] || []).find((i) => i.file === f && !i.hidden && !i.isMerged);
+				if (it) {
+					selectedState = it.processed;
+					break;
+				}
+			}
+		}
+		return selectedState !== null && selectedState !== item.processed;
+	}
+
 	function toggleSelect(user: string, file: string, checked: boolean) {
 		if (mergingFiles[file]) return;
-		selectedItems = {
-			...selectedItems,
-			[user]: { ...selectedItems[user], [file]: checked }
-		};
+		const items = groupedQueue[user] || [];
+		const currentItem = items.find((i) => i.file === file && !i.hidden && !i.isMerged);
+		if (!currentItem) return;
+		if (!checked) {
+			selectedItems = { ...selectedItems, [user]: { ...selectedItems[user], [file]: false } };
+			return;
+		}
+		const currentSelection = selectedItems[user] || {};
+		let existingState: boolean | null = null;
+		for (const [f, isSelected] of Object.entries(currentSelection)) {
+			if (isSelected) {
+				const item = items.find((i) => i.file === f && !i.hidden && !i.isMerged);
+				if (item) {
+					existingState = item.processed;
+					break;
+				}
+			}
+		}
+		if (existingState === null || existingState === currentItem.processed) {
+			selectedItems = { ...selectedItems, [user]: { ...currentSelection, [file]: true } };
+		}
 	}
 
 	function unmerge(user: string, fileUrl: string) {
 		const userItems = groupedQueue[user] || [];
 		const mergedIndex = userItems.findIndex((item) => item.file === fileUrl && item.isMerged);
 		if (mergedIndex === -1) return;
-
 		const mergedItem = userItems[mergedIndex] as MergedQueueItem;
 		if (
 			!mergedItem.mergedFrom ||
@@ -531,34 +492,20 @@
 			!mergedItem.originalIndices
 		)
 			return;
-
 		releasePdfBlob(fileUrl);
-
-		// Remove the merged item
 		const withoutMerged = [...userItems];
 		withoutMerged.splice(mergedIndex, 1);
-
-		// Restore hidden originals from preserved state
 		const restoredOriginals = mergedItem.originalItems.map((original) => ({
 			...original,
 			hidden: false
 		}));
-
-		// Create a new array with restored items at their original positions
 		let newUserItems = [...withoutMerged];
-
-		// Add each original item back at its original index
-		// Sort originalIndices in descending order to avoid index shifting issues
 		[...mergedItem.originalIndices]
 			.sort((a, b) => b - a)
 			.forEach((originalIndex, i) => {
-				// If the original index is before where the merged item was, adjust for the removed merged item
 				const adjustedIndex = originalIndex < mergedIndex ? originalIndex : originalIndex - 1;
-				// Insert the corresponding original item at the adjusted index
 				newUserItems.splice(adjustedIndex, 0, restoredOriginals[i]);
 			});
-
-		// Update state with new array
 		groupedQueue = { ...groupedQueue, [user]: newUserItems };
 		selectedItems = { ...selectedItems, [user]: {} };
 	}
@@ -611,19 +558,37 @@
 
 	async function confirmSelectedItems(user: string) {
 		const selected = (groupedQueue[user] || []).filter(
-			(item) => !item.hidden && !item.isMerged && selectedItems[user]?.[item.file]
+			(item) =>
+				!item.hidden && !item.isMerged && selectedItems[user]?.[item.file] && !item.processed
 		);
 		if (selected.length === 0) return;
 		finalConfirmDialog = { user, items: selected };
+		isUnconfirmMode = false;
+	}
+
+	async function unconfirmSelectedItems(user: string) {
+		const selected = (groupedQueue[user] || []).filter(
+			(item) => !item.hidden && !item.isMerged && selectedItems[user]?.[item.file] && item.processed
+		);
+		if (selected.length === 0) return;
+		finalConfirmDialog = { user, items: selected };
+		isUnconfirmMode = true;
 	}
 
 	async function executeFinalConfirm() {
 		if (!finalConfirmDialog) return;
 		const { user, items } = finalConfirmDialog;
-		for (const item of items) {
-			await confirmItem(item);
+		if (isUnconfirmMode) {
+			for (const item of items) {
+				await unprocessItem(item);
+			}
+		} else {
+			for (const item of items) {
+				await confirmItem(item);
+			}
 		}
 		finalConfirmDialog = null;
+		isUnconfirmMode = false;
 		selectedItems[user] = {};
 	}
 
@@ -633,19 +598,10 @@
 		unprocessingItem = { ...unprocessingItem, [id]: true };
 		try {
 			const { data, error } = await client.DELETE('/api/queue/{queue_id}/processed', {
-				params: {
-					path: {
-						queue_id: id
-					}
-				},
+				params: { path: { queue_id: id } },
 				headers: { Authorization: `Bearer ${token.value}` }
 			});
-
-			if (error) {
-				throw new Error(error || `Unprocess failed for ${id}`);
-			}
-
-			// Create new array with updated item
+			if (error) throw new Error(error || `Unprocess failed for ${id}`);
 			const newUserItems = groupedQueue[user].map((i) =>
 				i.id === id ? { ...i, processed: false } : i
 			);
@@ -663,19 +619,11 @@
 		unprocessingItem = { ...unprocessingItem, [id]: true };
 		try {
 			const { data: result, error } = await client.POST('/api/queue/{queue_id}/processed', {
-				params: {
-					path: {
-						queue_id: id
-					}
-				},
+				params: { path: { queue_id: id } },
 				headers: { Authorization: `Bearer ${token.value}` }
 			});
-
-			if (error) {
-				throw new Error(error || `Confirm failed for ${id}`);
-			}
+			if (error) throw new Error(error || `Confirm failed for ${id}`);
 			if (result.processed) {
-				// Create new array with updated item
 				const newUserItems = groupedQueue[user].map((i) =>
 					i.id === id ? { ...i, processed: true } : i
 				);
@@ -747,20 +695,24 @@
 	</DialogContent>
 </Dialog>
 
-<!-- Final Confirm All Dialog -->
+<!-- Final Confirm/Unconfirm Dialog -->
 <Dialog open={!!finalConfirmDialog} onOpenChange={(open) => !open && (finalConfirmDialog = null)}>
 	<DialogContent class="max-h-[80vh] overflow-y-auto">
 		<DialogHeader>
-			<DialogTitle>Confirm Selected Items</DialogTitle>
+			<DialogTitle>
+				{isUnconfirmMode ? 'Unconfirm Selected Items' : 'Confirm Selected Items'}
+			</DialogTitle>
 		</DialogHeader>
 		<div class="space-y-3 py-4">
 			<p class="text-sm text-muted-foreground">
-				You are about to mark the following {finalConfirmDialog?.items.length} item(s) as processed:
+				{isUnconfirmMode
+					? 'You are about to mark the following items as unprocessed:'
+					: 'You are about to mark the following items as processed:'}
 			</p>
 			<ul class="space-y-2">
 				{#each finalConfirmDialog?.items || [] as item}
 					<li class="flex items-start gap-2 text-sm">
-						<FileText class="mt-0.5 h-3 w-3 flex-shrink-0 text-muted-foreground" />
+						<FileText class="mt-0.5 h-3 w-3 shrink-0 text-muted-foreground" />
 						<span class="font-medium">{item.file.split('/').pop()}</span>
 						<span class="text-xs text-muted-foreground">
 							({itemPrintMode[item.id] === 'simplex' ? 'Simplex' : 'Duplex'})
@@ -773,7 +725,9 @@
 			<DialogClose>
 				<Button variant="outline">Cancel</Button>
 			</DialogClose>
-			<Button variant="default" onclick={executeFinalConfirm}>Confirm All</Button>
+			<Button variant="default" onclick={executeFinalConfirm}>
+				{isUnconfirmMode ? 'Unconfirm All' : 'Confirm All'}
+			</Button>
 		</DialogFooter>
 	</DialogContent>
 </Dialog>
@@ -806,11 +760,9 @@
 <TooltipProvider>
 	<div class="container mx-auto space-y-6 py-6">
 		<h1 class="text-3xl font-bold tracking-tight">PDF Processing Queue</h1>
-
 		{#if error}
 			<Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>
 		{/if}
-
 		{#if loading}
 			<div class="flex h-32 items-center justify-center">
 				<LoaderCircle class="h-8 w-8 animate-spin text-primary" />
@@ -835,7 +787,7 @@
 								</h2>
 							</div>
 							<div class="flex flex-wrap gap-2">
-								<!-- Unified Merge Button -->
+								<!-- ✅ Updated Merge Button Logic -->
 								{#if items.filter((i) => !i.hidden && !i.isMerged).length >= 2}
 									{#if selectedItems[user] && Object.values(selectedItems[user]).filter(Boolean).length >= 2}
 										<Button
@@ -853,37 +805,36 @@
 											{/if}
 										</Button>
 									{:else}
-										<Button
-											variant="default"
-											size="sm"
-											disabled={merging[user] ||
-												mergingAllForUser[user] ||
-												Object.values(mergingFiles).some((v) => v)}
-											onclick={() => mergeAllForUserBackend(user)}
-										>
-											{#if merging[user] || mergingAllForUser[user]}
-												<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Merging...
-											{:else}
-												<Merge class="mr-2 h-4 w-4" /> Merge All
-											{/if}
-										</Button>
+										<Tooltip>
+											<TooltipTrigger>
+												<Button
+													variant="default"
+													size="sm"
+													disabled
+													class="cursor-not-allowed opacity-60"
+												>
+													<Merge class="mr-2 h-4 w-4" /> Merge Selected
+												</Button>
+											</TooltipTrigger>
+											<TooltipContent>Select at least 2 items to merge</TooltipContent>
+										</Tooltip>
 									{/if}
 								{/if}
 
-								<Button
-									variant="outline"
-									size="sm"
-									disabled={confirmingSelected[user] ||
-										!selectedItems[user] ||
-										Object.values(selectedItems[user] || {}).filter(Boolean).length === 0}
-									onclick={() => confirmSelectedItems(user)}
-								>
-									{#if confirmingSelected[user]}
-										<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Confirming...
-									{:else}
-										<CircleCheckBig class="mr-2 h-4 w-4" /> Confirm Selected
-									{/if}
-								</Button>
+								<!-- ✅ Confirm/Unconfirm Buttons -->
+								{#if userSelectionState[user]?.action === 'confirm'}
+									<Button variant="outline" size="sm" onclick={() => confirmSelectedItems(user)}>
+										{#if confirmingSelected[user]}
+											<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Confirming...
+										{:else}
+											<CircleCheckBig class="mr-2 h-4 w-4" /> Confirm Selected
+										{/if}
+									</Button>
+								{:else if userSelectionState[user]?.action === 'unconfirm'}
+									<Button variant="outline" size="sm" onclick={() => unconfirmSelectedItems(user)}>
+										<X class="mr-2 h-4 w-4" /> Unconfirm Selected
+									</Button>
+								{/if}
 
 								{#if canClearQueue(user)}
 									<Button variant="destructive" size="sm" onclick={() => clearUserQueue(user)}>
@@ -892,7 +843,6 @@
 								{/if}
 							</div>
 						</div>
-
 						<Table>
 							<TableHeader>
 								<TableRow>
@@ -915,11 +865,16 @@
 										>
 											<TableCell>
 												{#if !item.isMerged}
+													<!-- ✅ Square Checkbox -->
 													<Checkbox
 														checked={!!selectedItems[item.user]?.[item.file]}
 														onCheckedChange={(checked) =>
 															toggleSelect(item.user, item.file, checked)}
-														disabled={mergingFiles[item.file]}
+														disabled={mergingFiles[item.file] || getShouldDisable(item.user, item)}
+														class={cn(
+															'h-4 w-4 rounded-sm', // square style
+															getShouldDisable(item.user, item) && 'cursor-not-allowed opacity-50'
+														)}
 													/>
 												{:else if item.mergedId}
 													<Button
@@ -966,7 +921,6 @@
 												{/if}
 											</TableCell>
 											<TableCell>{new Date(item.created_at).toLocaleString()}</TableCell>
-
 											<TableCell>
 												{#if !item.isMerged && !item.hidden}
 													<div class="flex items-center gap-2">
@@ -1009,9 +963,7 @@
 													</span>
 												{/if}
 											</TableCell>
-
 											<TableCell class="text-right">
-												<!-- Desktop -->
 												<div class="hidden justify-end gap-2 md:flex">
 													<div class="flex rounded-md border border-input shadow-sm">
 														<Tooltip>
@@ -1043,7 +995,6 @@
 															<TooltipContent>Open in new tab</TooltipContent>
 														</Tooltip>
 													</div>
-
 													<Tooltip>
 														<TooltipTrigger>
 															<Button
@@ -1055,14 +1006,11 @@
 																onclick={() => printPdf(item)}
 															>
 																{#if charging[item.id]}
-																	<CreditCard class="mr-1 h-3 w-3 animate-pulse" />
-																	Charging...
+																	<CreditCard class="mr-1 h-3 w-3 animate-pulse" /> Charging...
 																{:else if printing[item.id]}
-																	<LoaderCircle class="mr-1 h-3 w-3 animate-spin" />
-																	Printing...
+																	<LoaderCircle class="mr-1 h-3 w-3 animate-spin" /> Printing...
 																{:else}
-																	<Printer class="h-4 w-4" />
-																	Print
+																	<Printer class="h-4 w-4" /> Print
 																{/if}
 															</Button>
 														</TooltipTrigger>
@@ -1072,7 +1020,6 @@
 																: 'Print Duplex (free)'}
 														</TooltipContent>
 													</Tooltip>
-
 													{#if item.processed && !item.isMerged}
 														<Tooltip>
 															<TooltipTrigger>
@@ -1110,7 +1057,6 @@
 															<TooltipContent>Confirm</TooltipContent>
 														</Tooltip>
 													{/if}
-
 													{#if item.isMerged}
 														<Tooltip>
 															<TooltipTrigger>
@@ -1126,8 +1072,6 @@
 														</Tooltip>
 													{/if}
 												</div>
-
-												<!-- Mobile -->
 												<div class="md:hidden">
 													<DropdownMenu>
 														<DropdownMenuTrigger>
@@ -1140,19 +1084,15 @@
 																onclick={() => openPreview(item.file)}
 																disabled={mergingFiles[item.file]}
 															>
-																<Eye class="mr-2 h-4 w-4" />
-																Preview
+																<Eye class="mr-2 h-4 w-4" /> Preview
 															</DropdownMenuItem>
 															<DropdownMenuItem
 																onclick={() => openInNewTab(item.file)}
 																disabled={mergingFiles[item.file]}
 															>
-																<ExternalLink class="mr-2 h-4 w-4" />
-																Open in new tab
+																<ExternalLink class="mr-2 h-4 w-4" /> Open in new tab
 															</DropdownMenuItem>
-
 															<DropdownMenuSeparator />
-
 															<DropdownMenuItem
 																onclick={() => printPdf(item)}
 																disabled={printing[item.id] ||
@@ -1164,30 +1104,26 @@
 																)}
 															>
 																{#if charging[item.id]}
-																	<CreditCard class="mr-2 h-3 w-3 animate-pulse" />
-																	Charging...
+																	<CreditCard class="mr-2 h-3 w-3 animate-pulse" /> Charging...
 																{:else if printing[item.id]}
-																	<LoaderCircle class="mr-2 h-3 w-3 animate-spin" />
-																	Printing...
+																	<LoaderCircle class="mr-2 h-3 w-3 animate-spin" /> Printing...
 																{:else}
-																	<Printer class="mr-2 h-4 w-4" />
-																	Print ({itemPrintMode[item.id] === 'simplex'
+																	<Printer class="mr-2 h-4 w-4" /> Print ({itemPrintMode[
+																		item.id
+																	] === 'simplex'
 																		? 'Simplex'
 																		: 'Duplex'})
 																{/if}
 															</DropdownMenuItem>
-
 															{#if item.processed && !item.isMerged}
 																<DropdownMenuItem
 																	onclick={() => unprocessItem(item)}
 																	disabled={unprocessingItem[item.id]}
 																>
 																	{#if unprocessingItem[item.id]}
-																		<LoaderCircle class="mr-2 h-4 w-4 animate-spin" />
-																		Unprocessing...
+																		<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Unprocessing...
 																	{:else}
-																		<X class="mr-2 h-4 w-4" />
-																		Unprocess
+																		<X class="mr-2 h-4 w-4" /> Unprocess
 																	{/if}
 																</DropdownMenuItem>
 															{:else if !item.processed && !item.isMerged}
@@ -1196,22 +1132,18 @@
 																	disabled={unprocessingItem[item.id]}
 																>
 																	{#if unprocessingItem[item.id]}
-																		<LoaderCircle class="mr-2 h-4 w-4 animate-spin" />
-																		Confirming...
+																		<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Confirming...
 																	{:else}
-																		<CircleCheckBig class="mr-2 h-4 w-4" />
-																		Confirm
+																		<CircleCheckBig class="mr-2 h-4 w-4" /> Confirm
 																	{/if}
 																</DropdownMenuItem>
 															{/if}
-
 															{#if item.isMerged}
 																<DropdownMenuItem
 																	onclick={() => unmerge(item.user, item.file)}
 																	class="text-destructive focus:text-destructive"
 																>
-																	<X class="mr-2 h-4 w-4" />
-																	Unmerge
+																	<X class="mr-2 h-4 w-4" /> Unmerge
 																</DropdownMenuItem>
 															{/if}
 														</DropdownMenuContent>
@@ -1219,8 +1151,6 @@
 												</div>
 											</TableCell>
 										</TableRow>
-
-										<!-- Expanded originals -->
 										{#if item.isMerged && item.mergedFrom && item.mergedId && expandedMergedItems[item.mergedId]}
 											{#each item.mergedFrom as originalFile}
 												{#if queue.find((q) => q.file === originalFile && q.user === item.user)}
@@ -1238,13 +1168,11 @@
 																>
 															{/if}
 														</TableCell>
-														<TableCell>
-															<Badge variant="outline">Original</Badge>
-														</TableCell>
+														<TableCell><Badge variant="outline">Original</Badge></TableCell>
 														<TableCell>{new Date(original.created_at).toLocaleString()}</TableCell>
-														<TableCell>
-															<span class="text-sm text-muted-foreground">Duplex</span>
-														</TableCell>
+														<TableCell
+															><span class="text-sm text-muted-foreground">Duplex</span></TableCell
+														>
 														<TableCell class="text-right">
 															<div class="flex justify-end gap-2">
 																<Tooltip>
