@@ -397,6 +397,11 @@ export interface components {
 			/** Description */
 			description?: string | null;
 		};
+		/** QueueFilter */
+		QueueFilter: {
+			/** Include Processed */
+			include_processed?: boolean | null;
+		};
 		/** QueueFileResponse */
 		QueueFileResponse: {
 			/** Id */
@@ -413,6 +418,11 @@ export interface components {
 			user_id: number;
 			/** Page Count */
 			page_count: number | null;
+			/**
+			 * Print Mode
+			 * @enum {string}
+			 */
+			print_mode: 'single-sided' | 'double-sided';
 		};
 		/** QueueListResponse */
 		QueueListResponse: {
@@ -624,7 +634,9 @@ export interface operations {
 	};
 	apps_api_views_admin_queue_list_queue: {
 		parameters: {
-			query?: never;
+			query?: {
+				include_processed?: boolean | null;
+			};
 			header?: never;
 			path?: never;
 			cookie?: never;
