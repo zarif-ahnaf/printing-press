@@ -11,3 +11,8 @@ class PrinterCreateSchema(Schema):
 class PrinterOutSchema(PrinterCreateSchema):
     id: int
     image_url: str | None = None
+
+
+class PrinterDeleteSchema(Schema):
+    id: int
+    message: str
