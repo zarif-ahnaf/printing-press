@@ -21,6 +21,8 @@
 		DialogClose
 	} from '$lib/components/ui/dialog';
 	import { Checkbox } from '$lib/components/ui/checkbox';
+	import { Label } from '$lib/components/ui/label';
+	import { Skeleton } from '$lib/components/ui/skeleton';
 	import {
 		Tooltip,
 		TooltipContent,
@@ -283,6 +285,64 @@
 		selectedItems = { ...selectedItems, [user]: {} };
 	}
 
+	async function mergeAllForUserBackend(user: string) {
+		const userItems = groupedQueue[user] || [];
+		const filesToMerge = userItems
+			.filter((item) => !item.hidden && !item.isMerged && itemPrintMode[item.id] === 'simplex')
+			.map((item) => item.file);
+		if (filesToMerge.length < 2) {
+			error =
+				filesToMerge.length === 0
+					? 'No simplex files to merge.'
+					: 'At least 2 simplex files required to merge.';
+			return;
+		}
+		const cacheKey = hashFiles(filesToMerge);
+		let blobUrl: string;
+		if (mergedPdfCache.has(cacheKey)) {
+			mergedPdfCache.incrementRef(cacheKey);
+			blobUrl = mergedPdfCache.get(cacheKey)!;
+		} else {
+			mergingAllForUser = { ...mergingAllForUser, [user]: true };
+			mergingFiles = { ...mergingFiles };
+			for (const f of filesToMerge) mergingFiles[f] = true;
+			try {
+				const formData = new FormData();
+				const blobUrlsToRelease: string[] = [];
+				for (const url of filesToMerge) {
+					const bUrl = await fetchAndCachePdf(url);
+					blobUrlsToRelease.push(bUrl);
+					const res = await fetch(bUrl);
+					const blob = await res.blob();
+					formData.append('files', blob, url.split('/').pop() || 'file.pdf');
+				}
+				const mergeRes = await fetch(MERGE_ENDPOINT, {
+					method: 'POST',
+					body: formData,
+					headers: { Authorization: `Bearer ${token.value}` }
+				});
+				if (!mergeRes.ok) {
+					const text = await mergeRes.text();
+					throw new Error(`Merge failed: ${text}`);
+				}
+				const mergedBlob = await mergeRes.blob();
+				blobUrl = URL.createObjectURL(mergedBlob);
+				mergedPdfCache.set(cacheKey, blobUrl);
+				mergedPdfCache.incrementRef(cacheKey);
+				blobUrlsToRelease.forEach(releasePdfBlob);
+			} catch (err) {
+				error = err instanceof Error ? `Merge error: ${err.message}` : 'Merge failed';
+				return;
+			} finally {
+				mergingAllForUser = { ...mergingAllForUser, [user]: false };
+				mergingFiles = { ...mergingFiles };
+				for (const f of filesToMerge) delete mergingFiles[f];
+			}
+		}
+		insertMergedItem(user, filesToMerge, blobUrl);
+		selectedItems = { ...selectedItems, [user]: {} };
+	}
+
 	function insertMergedItem(user: string, files: string[], url: string) {
 		const userItems = groupedQueue[user] || [];
 		const selectedIndices: number[] = [];
@@ -411,7 +471,7 @@
 		userPageTotals = newTotals;
 	});
 
-	// ✅ Updated: Exclusive selection state for confirm/unconfirm
+	// Updated selection state logic
 	let userSelectionState = $derived(
 		Object.fromEntries(
 			Object.entries(groupedQueue).map(([user, items]) => {
@@ -419,21 +479,14 @@
 				const selectedNonMerged = items.filter(
 					(item) => !item.hidden && !item.isMerged && currentSelection[item.file]
 				);
-
 				if (selectedNonMerged.length === 0) {
 					return [user, { action: null as 'confirm' | 'unconfirm' | null }];
 				}
-
 				const allUnconfirmed = selectedNonMerged.every((item) => !item.processed);
 				const allConfirmed = selectedNonMerged.every((item) => item.processed);
-
-				if (allUnconfirmed) {
-					return [user, { action: 'confirm' }];
-				} else if (allConfirmed) {
-					return [user, { action: 'unconfirm' }];
-				} else {
-					return [user, { action: null }];
-				}
+				if (allUnconfirmed) return [user, { action: 'confirm' }];
+				if (allConfirmed) return [user, { action: 'unconfirm' }];
+				return [user, { action: null }];
 			})
 		)
 	);
@@ -682,9 +735,9 @@
 					}
 				}}
 			/>
-			<label for="dont-remind" class="text-sm text-muted-foreground">
+			<Label for="dont-remind" class="text-sm text-muted-foreground">
 				Don’t show this again for {printModeChangeDialog?.item.user} (until refresh)
-			</label>
+			</Label>
 		</div>
 		<DialogFooter class="pt-4">
 			<DialogClose>
@@ -764,8 +817,43 @@
 			<Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>
 		{/if}
 		{#if loading}
-			<div class="flex h-32 items-center justify-center">
-				<LoaderCircle class="h-8 w-8 animate-spin text-primary" />
+			<!-- ✅ Skeleton loading state -->
+			<div class="space-y-8">
+				{#each Array(3) as _, i}
+					<div class="overflow-hidden rounded-lg border">
+						<div class="flex flex-wrap items-center justify-between gap-4 bg-muted/50 px-6 py-4">
+							<Skeleton class="h-6 w-48" />
+							<div class="flex gap-2">
+								<Skeleton class="h-8 w-24" />
+								<Skeleton class="h-8 w-24" />
+							</div>
+						</div>
+						<Table>
+							<TableHeader>
+								<TableRow>
+									<TableHead class="w-12"><Skeleton class="h-4 w-4" /></TableHead>
+									<TableHead><Skeleton class="h-4 w-20" /></TableHead>
+									<TableHead><Skeleton class="h-4 w-20" /></TableHead>
+									<TableHead><Skeleton class="h-4 w-32" /></TableHead>
+									<TableHead><Skeleton class="h-4 w-24" /></TableHead>
+									<TableHead class="text-right"><Skeleton class="h-4 w-16" /></TableHead>
+								</TableRow>
+							</TableHeader>
+							<TableBody>
+								{#each Array(4) as __, j}
+									<TableRow>
+										<TableCell><Skeleton class="h-4 w-4" /></TableCell>
+										<TableCell><Skeleton class="h-4 w-32" /></TableCell>
+										<TableCell><Skeleton class="h-4 w-16" /></TableCell>
+										<TableCell><Skeleton class="h-4 w-24" /></TableCell>
+										<TableCell><Skeleton class="h-4 w-20" /></TableCell>
+										<TableCell class="text-right"><Skeleton class="h-4 w-16" /></TableCell>
+									</TableRow>
+								{/each}
+							</TableBody>
+						</Table>
+					</div>
+				{/each}
 			</div>
 		{:else if Object.keys(groupedQueue).length === 0}
 			<div class="py-12 text-center">
@@ -787,7 +875,7 @@
 								</h2>
 							</div>
 							<div class="flex flex-wrap gap-2">
-								<!-- ✅ Updated Merge Button Logic -->
+								<!-- ✅ Smart merge button logic -->
 								{#if items.filter((i) => !i.hidden && !i.isMerged).length >= 2}
 									{#if selectedItems[user] && Object.values(selectedItems[user]).filter(Boolean).length >= 2}
 										<Button
@@ -805,23 +893,40 @@
 											{/if}
 										</Button>
 									{:else}
-										<Tooltip>
-											<TooltipTrigger>
-												<Button
-													variant="default"
-													size="sm"
-													disabled
-													class="cursor-not-allowed opacity-60"
-												>
-													<Merge class="mr-2 h-4 w-4" /> Merge Selected
-												</Button>
-											</TooltipTrigger>
-											<TooltipContent>Select at least 2 items to merge</TooltipContent>
-										</Tooltip>
+										<!-- Show Merge All only when nothing is selected -->
+										{#if !selectedItems[user] || Object.values(selectedItems[user]).every((v) => !v)}
+											<Button
+												variant="default"
+												size="sm"
+												disabled={merging[user] ||
+													mergingAllForUser[user] ||
+													Object.values(mergingFiles).some((v) => v)}
+												onclick={() => mergeAllForUserBackend(user)}
+											>
+												{#if merging[user] || mergingAllForUser[user]}
+													<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Merging...
+												{:else}
+													<Merge class="mr-2 h-4 w-4" /> Merge All
+												{/if}
+											</Button>
+										{:else}
+											<Tooltip>
+												<TooltipTrigger>
+													<Button
+														variant="default"
+														size="sm"
+														disabled
+														class="cursor-not-allowed opacity-60"
+													>
+														<Merge class="mr-2 h-4 w-4" /> Merge Selected
+													</Button>
+												</TooltipTrigger>
+												<TooltipContent>Select at least 2 items to merge</TooltipContent>
+											</Tooltip>
+										{/if}
 									{/if}
 								{/if}
 
-								<!-- ✅ Confirm/Unconfirm Buttons -->
 								{#if userSelectionState[user]?.action === 'confirm'}
 									<Button variant="outline" size="sm" onclick={() => confirmSelectedItems(user)}>
 										{#if confirmingSelected[user]}
@@ -865,14 +970,13 @@
 										>
 											<TableCell>
 												{#if !item.isMerged}
-													<!-- ✅ Square Checkbox -->
 													<Checkbox
 														checked={!!selectedItems[item.user]?.[item.file]}
 														onCheckedChange={(checked) =>
 															toggleSelect(item.user, item.file, checked)}
 														disabled={mergingFiles[item.file] || getShouldDisable(item.user, item)}
 														class={cn(
-															'h-4 w-4 rounded-sm', // square style
+															'h-4 w-4 rounded-sm', // ✅ square checkbox
 															getShouldDisable(item.user, item) && 'cursor-not-allowed opacity-50'
 														)}
 													/>
