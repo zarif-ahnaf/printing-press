@@ -21,8 +21,8 @@
 		DialogClose
 	} from '$lib/components/ui/dialog';
 	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { Label } from '$lib/components/ui/label';
-	import { Skeleton } from '$lib/components/ui/skeleton';
+	import { Label } from '$lib/components/ui/label'; // ✅ Added Label
+	import { Skeleton } from '$lib/components/ui/skeleton'; // ✅ Added Skeleton
 	import {
 		Tooltip,
 		TooltipContent,
@@ -71,7 +71,7 @@
 		user: string;
 		user_id: number;
 		pageCount?: number;
-		print_mode: 'single-sided' | 'double-sided';
+		print_mode?: 'single-sided' | 'double-sided'; // Optional to match API
 		isMerged?: boolean;
 		mergedFrom?: string[];
 		hidden?: boolean;
@@ -99,7 +99,6 @@
 	let itemPrintMode = $state<Record<number, 'duplex' | 'simplex'>>({});
 
 	// Dialog states
-	let confirmQueueDialogOpenFor = $state<string | null>(null);
 	let printModeChangeDialog = $state<{
 		item: QueueItem;
 		targetMode: 'simplex' | 'duplex';
@@ -393,7 +392,7 @@
 				queue = (data.queue || []).map((item: any) => ({
 					...item,
 					pageCount: item.page_count ?? undefined,
-					print_mode: item.print_mode
+					...(item.print_mode !== undefined && { print_mode: item.print_mode })
 				}));
 				groupedQueue = groupByUser(queue);
 				selectedItems = {};
@@ -413,14 +412,16 @@
 		fetchQueue();
 	});
 
+	// ✅ FIXED: Type assertion to resolve all destructuring errors
 	$effect(() => {
-		for (const [user, items] of Object.entries(groupedQueue)) {
+		const entries = Object.entries(groupedQueue) as [string, QueueItem[]][];
+		for (const [user, items] of entries) {
 			for (const item of items) {
 				if (item.hidden || !item.isMerged || !item.mergedFrom || !item.mergedId) continue;
 				let total = 0;
 				let allResolved = true;
-				for (const sourceFile of item.mergedFrom) {
-					const sourceItem = items.find((i) => i.file === sourceFile && !i.isMerged);
+				for (const sourceFile of item.mergedFrom!) {
+					const sourceItem = items.find((i: QueueItem) => i.file === sourceFile && !i.isMerged);
 					if (!sourceItem) {
 						const fallback = queue.find((q) => q.file === sourceFile && q.user === user);
 						if (fallback?.pageCount !== undefined) {
@@ -437,7 +438,7 @@
 					}
 				}
 				if (allResolved && item.pageCount !== total) {
-					const idx = items.findIndex((i) => i.mergedId === item.mergedId);
+					const idx = items.findIndex((i: QueueItem) => i.mergedId === item.mergedId);
 					if (idx !== -1) {
 						const updated = { ...item, pageCount: total };
 						const newItems = [...items];
@@ -445,7 +446,7 @@
 						groupedQueue = { ...groupedQueue, [user]: newItems };
 					}
 				} else if (!allResolved && item.pageCount === undefined) {
-					const idx = items.findIndex((i) => i.mergedId === item.mergedId);
+					const idx = items.findIndex((i: QueueItem) => i.mergedId === item.mergedId);
 					if (idx !== -1) {
 						const updated = { ...item, pageCount: total };
 						const newItems = [...items];
@@ -471,22 +472,21 @@
 		userPageTotals = newTotals;
 	});
 
-	// Updated selection state logic
 	let userSelectionState = $derived(
 		Object.fromEntries(
 			Object.entries(groupedQueue).map(([user, items]) => {
 				const currentSelection = selectedItems[user] || {};
-				const selectedNonMerged = items.filter(
-					(item) => !item.hidden && !item.isMerged && currentSelection[item.file]
+				const hasUnconfirmed = Object.keys(currentSelection).some((file) =>
+					items.some(
+						(item) => item.file === file && !item.hidden && !item.isMerged && !item.processed
+					)
 				);
-				if (selectedNonMerged.length === 0) {
-					return [user, { action: null as 'confirm' | 'unconfirm' | null }];
-				}
-				const allUnconfirmed = selectedNonMerged.every((item) => !item.processed);
-				const allConfirmed = selectedNonMerged.every((item) => item.processed);
-				if (allUnconfirmed) return [user, { action: 'confirm' }];
-				if (allConfirmed) return [user, { action: 'unconfirm' }];
-				return [user, { action: null }];
+				const hasConfirmed = Object.keys(currentSelection).some((file) =>
+					items.some(
+						(item) => item.file === file && !item.hidden && !item.isMerged && item.processed
+					)
+				);
+				return [user, { hasUnconfirmed, hasConfirmed }];
 			})
 		)
 	);
@@ -689,6 +689,7 @@
 		}
 	}
 
+	// ✅ Clear only when ALL non-hidden items are processed
 	function canClearQueue(user: string): boolean {
 		const items = groupedQueue[user] || [];
 		return items.every((item) => item.processed || item.hidden);
@@ -735,6 +736,7 @@
 					}
 				}}
 			/>
+			<!-- ✅ Using <Label> from shadcn-svelte -->
 			<Label for="dont-remind" class="text-sm text-muted-foreground">
 				Don’t show this again for {printModeChangeDialog?.item.user} (until refresh)
 			</Label>
@@ -817,7 +819,7 @@
 			<Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>
 		{/if}
 		{#if loading}
-			<!-- ✅ Skeleton loading state -->
+			<!-- ✅ Skeleton loading UI -->
 			<div class="space-y-8">
 				{#each Array(3) as _, i}
 					<div class="overflow-hidden rounded-lg border">
@@ -875,7 +877,6 @@
 								</h2>
 							</div>
 							<div class="flex flex-wrap gap-2">
-								<!-- ✅ Smart merge button logic -->
 								{#if items.filter((i) => !i.hidden && !i.isMerged).length >= 2}
 									{#if selectedItems[user] && Object.values(selectedItems[user]).filter(Boolean).length >= 2}
 										<Button
@@ -893,41 +894,24 @@
 											{/if}
 										</Button>
 									{:else}
-										<!-- Show Merge All only when nothing is selected -->
-										{#if !selectedItems[user] || Object.values(selectedItems[user]).every((v) => !v)}
-											<Button
-												variant="default"
-												size="sm"
-												disabled={merging[user] ||
-													mergingAllForUser[user] ||
-													Object.values(mergingFiles).some((v) => v)}
-												onclick={() => mergeAllForUserBackend(user)}
-											>
-												{#if merging[user] || mergingAllForUser[user]}
-													<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Merging...
-												{:else}
-													<Merge class="mr-2 h-4 w-4" /> Merge All
-												{/if}
-											</Button>
-										{:else}
-											<Tooltip>
-												<TooltipTrigger>
-													<Button
-														variant="default"
-														size="sm"
-														disabled
-														class="cursor-not-allowed opacity-60"
-													>
-														<Merge class="mr-2 h-4 w-4" /> Merge Selected
-													</Button>
-												</TooltipTrigger>
-												<TooltipContent>Select at least 2 items to merge</TooltipContent>
-											</Tooltip>
-										{/if}
+										<Button
+											variant="default"
+											size="sm"
+											disabled={merging[user] ||
+												mergingAllForUser[user] ||
+												Object.values(mergingFiles).some((v) => v)}
+											onclick={() => mergeAllForUserBackend(user)}
+										>
+											{#if merging[user] || mergingAllForUser[user]}
+												<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Merging...
+											{:else}
+												<Merge class="mr-2 h-4 w-4" /> Merge All
+											{/if}
+										</Button>
 									{/if}
 								{/if}
 
-								{#if userSelectionState[user]?.action === 'confirm'}
+								{#if userSelectionState[user]?.hasUnconfirmed}
 									<Button variant="outline" size="sm" onclick={() => confirmSelectedItems(user)}>
 										{#if confirmingSelected[user]}
 											<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Confirming...
@@ -935,7 +919,7 @@
 											<CircleCheckBig class="mr-2 h-4 w-4" /> Confirm Selected
 										{/if}
 									</Button>
-								{:else if userSelectionState[user]?.action === 'unconfirm'}
+								{:else if userSelectionState[user]?.hasConfirmed}
 									<Button variant="outline" size="sm" onclick={() => unconfirmSelectedItems(user)}>
 										<X class="mr-2 h-4 w-4" /> Unconfirm Selected
 									</Button>
@@ -970,13 +954,14 @@
 										>
 											<TableCell>
 												{#if !item.isMerged}
+													<!-- ✅ Square checkbox -->
 													<Checkbox
 														checked={!!selectedItems[item.user]?.[item.file]}
 														onCheckedChange={(checked) =>
 															toggleSelect(item.user, item.file, checked)}
 														disabled={mergingFiles[item.file] || getShouldDisable(item.user, item)}
 														class={cn(
-															'h-4 w-4 rounded-sm', // ✅ square checkbox
+															'h-4 w-4 rounded-sm', // square style
 															getShouldDisable(item.user, item) && 'cursor-not-allowed opacity-50'
 														)}
 													/>
