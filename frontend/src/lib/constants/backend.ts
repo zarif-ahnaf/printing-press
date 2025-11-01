@@ -8,4 +8,7 @@ const API_URL = `${BACKEND_URL}/api`;
 export var PDF_CONVERT_URL = `${API_URL}/convert/pdf/`;
 export var MERGE_ENDPOINT = `${API_URL}/convert/merge/`;
 export var NONBLANK_URL = `${API_URL}/convert/nonblank/`;
+export var COLOR_SPLIT_URL = `${API_URL}/split/pdf_colors/color/`;
+export var BW_SPLIT_URL = `${API_URL}/split/pdf_colors/grayscale/`;
+
 export { BACKEND_URL };

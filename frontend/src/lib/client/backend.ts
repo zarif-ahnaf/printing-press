@@ -109,7 +109,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/convert/merge/": {
+    "/api/convert/merge/color/": {
         parameters: {
             query?: never;
             header?: never;
@@ -118,14 +118,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Merge Pdfs
-         * @description Merge multiple uploaded PDF files into a single PDF.
-         *
-         *     - Accepts 2 or more PDF files.
-         *     - Returns merged PDF as an inline HTTP response.
-         */
-        post: operations["apps_api_views_convert_merge_merge_pdfs"];
+        /** Split Color */
+        post: operations["apps_api_views_convert_merge_split_color"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/convert/merge/grayscale/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Split Grayscale */
+        post: operations["apps_api_views_convert_merge_split_grayscale"];
         delete?: never;
         options?: never;
         head?: never;
@@ -239,7 +250,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/split/pdf_colors/": {
+    "/api/split/pdf_colors/color/": {
         parameters: {
             query?: never;
             header?: never;
@@ -248,14 +259,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /**
-         * Pdf Colors
-         * @description Split uploaded PDF into color and grayscale pages.
-         *     Returns a ZIP containing:
-         *       - color.pdf
-         *       - grayscale.pdf
-         */
-        post: operations["apps_api_views_split_pdf_colors_pdf_colors"];
+        /** Split Color */
+        post: operations["apps_api_views_split_pdf_colors_split_color"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/split/pdf_colors/grayscale/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Split Grayscale */
+        post: operations["apps_api_views_split_pdf_colors_split_grayscale"];
         delete?: never;
         options?: never;
         head?: never;
@@ -815,7 +837,7 @@ export interface operations {
             };
         };
     };
-    apps_api_views_convert_merge_merge_pdfs: {
+    apps_api_views_convert_merge_split_color: {
         parameters: {
             query?: never;
             header?: never;
@@ -825,8 +847,39 @@ export interface operations {
         requestBody: {
             content: {
                 "multipart/form-data": {
-                    /** Files */
-                    files: string[];
+                    /**
+                     * File
+                     * Format: binary
+                     */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    apps_api_views_convert_merge_split_grayscale: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * File
+                     * Format: binary
+                     */
+                    file: string;
                 };
             };
         };
@@ -1018,7 +1071,35 @@ export interface operations {
             };
         };
     };
-    apps_api_views_split_pdf_colors_pdf_colors: {
+    apps_api_views_split_pdf_colors_split_color: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * File
+                     * Format: binary
+                     */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    apps_api_views_split_pdf_colors_split_grayscale: {
         parameters: {
             query?: never;
             header?: never;

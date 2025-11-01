@@ -36,12 +36,6 @@
 		DropdownMenuSeparator,
 		DropdownMenuTrigger
 	} from '$lib/components/ui/dropdown-menu';
-	import {
-		Accordion,
-		AccordionContent,
-		AccordionItem,
-		AccordionTrigger
-	} from '$lib/components/ui/accordion';
 	// Lucide Icons
 	import {
 		FileText,
@@ -55,13 +49,20 @@
 		ChevronDown,
 		CircleCheckBig,
 		CreditCard,
-		Repeat
+		Repeat,
+		Palette
 	} from 'lucide-svelte';
-	import { MERGE_ENDPOINT } from '$lib/constants/backend';
+	import { BW_SPLIT_URL, COLOR_SPLIT_URL, MERGE_ENDPOINT } from '$lib/constants/backend';
 	import { token } from '$lib/stores/token.svelte';
 	import { createRefCountedCache } from '$lib/cache/createRefCountedCache';
 	import { cn } from '$lib/utils';
 	import { client } from '$lib/client';
+	import {
+		Accordion,
+		AccordionContent,
+		AccordionItem,
+		AccordionTrigger
+	} from '$lib/components/ui/accordion';
 
 	interface MergedQueueItem extends QueueItem {
 		originalItems: QueueItem[];
@@ -82,9 +83,6 @@
 		mergedFrom?: string[];
 		hidden?: boolean;
 		mergedId?: string;
-		originalItems?: QueueItem[];
-		originalIndices?: number[];
-		mergedFromFiles?: string[];
 	}
 
 	let queue = $state<QueueItem[]>([]);
@@ -104,6 +102,11 @@
 	let unprocessingItem = $state<Record<number, boolean>>({});
 	let expandedMergedItems = $state<Record<string, boolean>>({});
 	let itemPrintMode = $state<Record<number, 'duplex' | 'simplex'>>({});
+
+	// ➕ Split state
+	let splitResults = $state<Record<number, { color: string | null; grayscale: string | null }>>({});
+	let splittingColorGrayscale = $state<Record<number, boolean>>({});
+	let splitPrintMode = $state<Record<string, 'duplex' | 'simplex'>>({});
 
 	// Dialog states
 	let printModeChangeDialog = $state<{
@@ -164,30 +167,23 @@
 		}
 	}
 
-	async function chargeForPdf(item: QueueItem): Promise<boolean> {
+	async function chargeForPdf(item: QueueItem, mode: 'duplex' | 'simplex'): Promise<boolean> {
 		if (!item.pageCount) return false;
-		const mode = itemPrintMode[item.id] || 'duplex';
 		if (mode !== 'simplex') return true;
 		const sheets = item.pageCount % 2 === 0 ? item.pageCount : item.pageCount + 1;
 		if (sheets <= 0) return true;
 		charging = { ...charging, [item.id]: true };
 		try {
-			const { data, error } = await client.POST('/api/charge/{username}', {
+			const { error } = await client.POST('/api/charge/{username}', {
 				headers: { Authorization: `Bearer ${token.value}` },
-				params: {
-					path: {
-						username: item.user
-					}
-				},
+				params: { path: { username: item.user } },
 				body: {
 					user_id: item.user_id,
 					amount: sheets,
 					description: `Simplex printing: ${item.file.split('/').pop()} (${item.pageCount} pages → ${sheets} sheets)`
 				}
 			});
-			if (error) {
-				throw new Error('Charge failed');
-			}
+			if (error) throw new Error('Charge failed');
 			return true;
 		} catch (err) {
 			error =
@@ -198,11 +194,14 @@
 		}
 	}
 
-	async function printPdf(item: QueueItem) {
+	async function printPdf(
+		item: QueueItem,
+		mode: 'duplex' | 'simplex' = itemPrintMode[item.id] || 'duplex'
+	) {
 		const { id, file } = item;
 		printing = { ...printing, [id]: true };
 		try {
-			const charged = await chargeForPdf(item);
+			const charged = await chargeForPdf(item, mode);
 			if (!charged) return;
 			const pdfBlobUrl = await fetchAndCachePdf(file);
 			const iframe = document.createElement('iframe');
@@ -226,6 +225,55 @@
 			error = err instanceof Error ? `Print error: ${err.message}` : 'Print failed';
 		} finally {
 			printing = { ...printing, [id]: false };
+		}
+	}
+
+	async function splitPdfIntoColorAndGrayscale(item: QueueItem) {
+		const { id, file } = item;
+		splittingColorGrayscale = { ...splittingColorGrayscale, [id]: true };
+		try {
+			const pdfBlobUrl = await fetchAndCachePdf(file);
+			const res = await fetch(pdfBlobUrl);
+			const pdfBlob = await res.blob();
+			const makeFormData = (blob: Blob) => {
+				const fd = new FormData();
+				fd.append('file', blob, file.split('/').pop() || 'doc.pdf');
+				return fd;
+			};
+			const [colorRes, grayRes] = await Promise.all([
+				fetch(COLOR_SPLIT_URL, {
+					method: 'POST',
+					body: makeFormData(pdfBlob),
+					headers: { Authorization: `Bearer ${token.value}` }
+				}),
+				fetch(BW_SPLIT_URL, {
+					method: 'POST',
+					body: makeFormData(pdfBlob),
+					headers: { Authorization: `Bearer ${token.value}` }
+				})
+			]);
+			if (!colorRes.ok || !grayRes.ok) {
+				const errText = await colorRes.text();
+				throw new Error(`Split failed: ${errText}`);
+			}
+			const [colorBlob, grayBlob] = await Promise.all([colorRes.blob(), grayRes.blob()]);
+			const colorUrl = URL.createObjectURL(colorBlob);
+			const grayUrl = URL.createObjectURL(grayBlob);
+			fetchedPdfCache.set(`split_color_${id}`, colorUrl);
+			fetchedPdfCache.set(`split_gray_${id}`, grayUrl);
+			fetchedPdfCache.incrementRef(`split_color_${id}`);
+			fetchedPdfCache.incrementRef(`split_gray_${id}`);
+			splitResults = {
+				...splitResults,
+				[id]: { color: colorUrl, grayscale: grayUrl }
+			};
+			// Initialize split print modes to match parent
+			splitPrintMode[`color-${id}`] = itemPrintMode[id] || 'duplex';
+			splitPrintMode[`gray-${id}`] = itemPrintMode[id] || 'duplex';
+		} catch (err) {
+			error = err instanceof Error ? `Split error: ${err.message}` : 'Split failed';
+		} finally {
+			splittingColorGrayscale = { ...splittingColorGrayscale, [id]: false };
 		}
 	}
 
@@ -392,14 +440,8 @@
 			try {
 				loading = true;
 				const { data, error } = await client.GET('/api/admin/queue/', {
-					headers: {
-						Authorization: `Bearer ${token.value}`
-					},
-					params: {
-						query: {
-							include_processed: true
-						}
-					}
+					headers: { Authorization: `Bearer ${token.value}` },
+					params: { query: { include_processed: true } }
 				});
 				if (error) throw new Error('Failed to fetch queue');
 				queue = (data.queue || []).map((item: any) => ({
@@ -720,12 +762,322 @@
 	onDestroy(() => {
 		for (const [_, url] of mergedPdfCache.entries()) URL.revokeObjectURL(url as string);
 		for (const [_, url] of fetchedPdfCache.entries()) URL.revokeObjectURL(url as string);
+		for (const id of Object.keys(splitResults)) {
+			const r = splitResults[+id];
+			if (r?.color) URL.revokeObjectURL(r.color);
+			if (r?.grayscale) URL.revokeObjectURL(r.grayscale);
+		}
 		mergedPdfCache.evictAll();
 		fetchedPdfCache.evictAll();
 	});
 </script>
 
-<!-- Print Mode Change Confirmation Dialog -->
+<!-- Snippets -->
+{#snippet mainRowActions(item: QueueItem)}
+	<div class="hidden justify-end gap-2 md:flex">
+		<div class="flex rounded-md border border-input shadow-sm">
+			<Tooltip>
+				<TooltipTrigger>
+					<Button
+						variant="outline"
+						size="sm"
+						class="rounded-r-none border-r"
+						onclick={() => openPreview(item.file)}
+						disabled={mergingFiles[item.file]}
+					>
+						<Eye class="h-4 w-4" />
+					</Button>
+				</TooltipTrigger>
+				<TooltipContent>Preview</TooltipContent>
+			</Tooltip>
+			<Tooltip>
+				<TooltipTrigger>
+					<Button
+						variant="outline"
+						size="sm"
+						class="rounded-l-none"
+						onclick={() => openInNewTab(item.file)}
+						disabled={mergingFiles[item.file]}
+					>
+						<ExternalLink class="h-4 w-4" />
+					</Button>
+				</TooltipTrigger>
+				<TooltipContent>Open in new tab</TooltipContent>
+			</Tooltip>
+		</div>
+		<Tooltip>
+			<TooltipTrigger>
+				<Button
+					variant="default"
+					size="sm"
+					disabled={printing[item.id] || charging[item.id] || mergingFiles[item.file]}
+					onclick={() => printPdf(item)}
+				>
+					{#if charging[item.id]}
+						<CreditCard class="mr-1 h-3 w-3 animate-pulse" /> Charging...
+					{:else if printing[item.id]}
+						<LoaderCircle class="mr-1 h-3 w-3 animate-spin" /> Printing...
+					{:else}
+						<Printer class="h-4 w-4" /> Print
+					{/if}
+				</Button>
+			</TooltipTrigger>
+			<TooltipContent>
+				{itemPrintMode[item.id] === 'simplex'
+					? 'Print Simplex (will charge)'
+					: 'Print Duplex (free)'}
+			</TooltipContent>
+		</Tooltip>
+
+		<!-- ✅ TOGGLEABLE PALETTE BUTTON -->
+		<Tooltip>
+			<TooltipTrigger>
+				<Button
+					variant={splitResults[item.id] ? 'default' : 'outline'}
+					size="sm"
+					disabled={splittingColorGrayscale[item.id] || mergingFiles[item.file]}
+					onclick={() => {
+						if (splitResults[item.id]) {
+							// Re-click: undo split
+							const r = splitResults[item.id];
+							if (r?.color) {
+								URL.revokeObjectURL(r.color);
+								fetchedPdfCache.decrementRef(`split_color_${item.id}`);
+							}
+							if (r?.grayscale) {
+								URL.revokeObjectURL(r.grayscale);
+								fetchedPdfCache.decrementRef(`split_gray_${item.id}`);
+							}
+							splitResults = { ...splitResults };
+							delete splitResults[item.id];
+							delete splitPrintMode[`color-${item.id}`];
+							delete splitPrintMode[`gray-${item.id}`];
+						} else {
+							// First click: split
+							splitPdfIntoColorAndGrayscale(item);
+						}
+					}}
+				>
+					{#if splittingColorGrayscale[item.id]}
+						<LoaderCircle class="h-4 w-4 animate-spin" />
+					{:else}
+						<Palette class="h-4 w-4" />
+					{/if}
+				</Button>
+			</TooltipTrigger>
+			<TooltipContent>
+				{splitResults[item.id] ? 'Hide split view' : 'Split Color / Grayscale'}
+			</TooltipContent>
+		</Tooltip>
+
+		{#if item.processed && !item.isMerged}
+			<Tooltip>
+				<TooltipTrigger>
+					<Button
+						variant="outline"
+						size="sm"
+						disabled={unprocessingItem[item.id]}
+						onclick={() => unprocessItem(item)}
+					>
+						{#if unprocessingItem[item.id]}
+							<LoaderCircle class="h-4 w-4 animate-spin" />
+						{:else}
+							<X class="h-4 w-4" />
+						{/if}
+					</Button>
+				</TooltipTrigger>
+				<TooltipContent>Unprocess</TooltipContent>
+			</Tooltip>
+		{:else if !item.processed && !item.isMerged}
+			<Tooltip>
+				<TooltipTrigger>
+					<Button
+						variant="outline"
+						size="sm"
+						disabled={unprocessingItem[item.id]}
+						onclick={() => confirmItem(item)}
+					>
+						{#if unprocessingItem[item.id]}
+							<LoaderCircle class="h-4 w-4 animate-spin" />
+						{:else}
+							<CircleCheckBig class="h-4 w-4" />
+						{/if}
+					</Button>
+				</TooltipTrigger>
+				<TooltipContent>Confirm</TooltipContent>
+			</Tooltip>
+		{/if}
+		{#if item.isMerged}
+			<Tooltip>
+				<TooltipTrigger>
+					<Button variant="destructive" size="icon" onclick={() => unmerge(item.user, item.file)}>
+						<X class="h-4 w-4" />
+					</Button>
+				</TooltipTrigger>
+				<TooltipContent>Unmerge</TooltipContent>
+			</Tooltip>
+		{/if}
+	</div>
+	<div class="md:hidden">
+		<DropdownMenu>
+			<DropdownMenuTrigger>
+				<Button variant="outline" size="icon">
+					<ChevronDown class="h-4 w-4" />
+				</Button>
+			</DropdownMenuTrigger>
+			<DropdownMenuContent align="end" class="w-56">
+				<DropdownMenuItem onclick={() => openPreview(item.file)} disabled={mergingFiles[item.file]}>
+					<Eye class="mr-2 h-4 w-4" /> Preview
+				</DropdownMenuItem>
+				<DropdownMenuItem
+					onclick={() => openInNewTab(item.file)}
+					disabled={mergingFiles[item.file]}
+				>
+					<ExternalLink class="mr-2 h-4 w-4" /> Open in new tab
+				</DropdownMenuItem>
+				<DropdownMenuItem
+					onclick={() => {
+						if (splitResults[item.id]) {
+							const r = splitResults[item.id];
+							if (r?.color) {
+								URL.revokeObjectURL(r.color);
+								fetchedPdfCache.decrementRef(`split_color_${item.id}`);
+							}
+							if (r?.grayscale) {
+								URL.revokeObjectURL(r.grayscale);
+								fetchedPdfCache.decrementRef(`split_gray_${item.id}`);
+							}
+							splitResults = { ...splitResults };
+							delete splitResults[item.id];
+							delete splitPrintMode[`color-${item.id}`];
+							delete splitPrintMode[`gray-${item.id}`];
+						} else {
+							splitPdfIntoColorAndGrayscale(item);
+						}
+					}}
+					disabled={splittingColorGrayscale[item.id] || mergingFiles[item.file]}
+				>
+					{#if splittingColorGrayscale[item.id]}
+						<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Splitting...
+					{:else}
+						<Palette class="mr-2 h-4 w-4" /> {splitResults[item.id] ? 'Hide Split' : 'Split Color'}
+					{/if}
+				</DropdownMenuItem>
+				<DropdownMenuSeparator />
+				<DropdownMenuItem
+					onclick={() => printPdf(item)}
+					disabled={printing[item.id] || charging[item.id] || mergingFiles[item.file]}
+					class={cn('flex items-center', (printing[item.id] || charging[item.id]) && 'opacity-75')}
+				>
+					{#if charging[item.id]}
+						<CreditCard class="mr-2 h-3 w-3 animate-pulse" /> Charging...
+					{:else if printing[item.id]}
+						<LoaderCircle class="mr-2 h-3 w-3 animate-spin" /> Printing...
+					{:else}
+						<Printer class="mr-2 h-4 w-4" /> Print ({itemPrintMode[item.id] === 'simplex'
+							? 'Simplex'
+							: 'Duplex'})
+					{/if}
+				</DropdownMenuItem>
+				{#if item.processed && !item.isMerged}
+					<DropdownMenuItem
+						onclick={() => unprocessItem(item)}
+						disabled={unprocessingItem[item.id]}
+					>
+						{#if unprocessingItem[item.id]}
+							<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Unprocessing...
+						{:else}
+							<X class="mr-2 h-4 w-4" /> Unprocess
+						{/if}
+					</DropdownMenuItem>
+				{:else if !item.processed && !item.isMerged}
+					<DropdownMenuItem onclick={() => confirmItem(item)} disabled={unprocessingItem[item.id]}>
+						{#if unprocessingItem[item.id]}
+							<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Confirming...
+						{:else}
+							<CircleCheckBig class="mr-2 h-4 w-4" /> Confirm
+						{/if}
+					</DropdownMenuItem>
+				{/if}
+				{#if item.isMerged}
+					<DropdownMenuItem
+						onclick={() => unmerge(item.user, item.file)}
+						class="text-destructive focus:text-destructive"
+					>
+						<X class="mr-2 h-4 w-4" /> Unmerge
+					</DropdownMenuItem>
+				{/if}
+			</DropdownMenuContent>
+		</DropdownMenu>
+	</div>
+{/snippet}
+
+{#snippet splitRowActions(fakeItem: { file: string }, label: string, mode: 'duplex' | 'simplex')}
+	<div class="hidden justify-end gap-2 md:flex">
+		<div class="flex rounded-md border border-input shadow-sm">
+			<Tooltip>
+				<TooltipTrigger>
+					<Button
+						variant="outline"
+						size="sm"
+						class="rounded-r-none border-r"
+						onclick={() => openPreview(fakeItem.file)}
+					>
+						<Eye class="h-4 w-4" />
+					</Button>
+				</TooltipTrigger>
+				<TooltipContent>Preview {label}</TooltipContent>
+			</Tooltip>
+			<Tooltip>
+				<TooltipTrigger>
+					<Button
+						variant="outline"
+						size="sm"
+						class="rounded-l-none"
+						onclick={() => openInNewTab(fakeItem.file)}
+					>
+						<ExternalLink class="h-4 w-4" />
+					</Button>
+				</TooltipTrigger>
+				<TooltipContent>Open {label} in new tab</TooltipContent>
+			</Tooltip>
+		</div>
+		<Tooltip>
+			<TooltipTrigger>
+				<Button
+					variant="default"
+					size="sm"
+					onclick={() => printPdf({ id: -1, ...fakeItem } as QueueItem, mode)}
+				>
+					<Printer class="h-4 w-4" /> Print {label}
+				</Button>
+			</TooltipTrigger>
+			<TooltipContent>Print {label.toLowerCase()} pages</TooltipContent>
+		</Tooltip>
+	</div>
+	<div class="md:hidden">
+		<DropdownMenu>
+			<DropdownMenuTrigger>
+				<Button variant="outline" size="icon">
+					<ChevronDown class="h-4 w-4" />
+				</Button>
+			</DropdownMenuTrigger>
+			<DropdownMenuContent align="end" class="w-56">
+				<DropdownMenuItem onclick={() => openPreview(fakeItem.file)}>
+					<Eye class="mr-2 h-4 w-4" /> Preview {label}
+				</DropdownMenuItem>
+				<DropdownMenuItem onclick={() => openInNewTab(fakeItem.file)}>
+					<ExternalLink class="mr-2 h-4 w-4" /> Open {label}
+				</DropdownMenuItem>
+				<DropdownMenuItem onclick={() => printPdf({ id: -1, ...fakeItem } as QueueItem, mode)}>
+					<Printer class="mr-2 h-4 w-4" /> Print {label}
+				</DropdownMenuItem>
+			</DropdownMenuContent>
+		</DropdownMenu>
+	</div>
+{/snippet}
+
+<!-- Dialogs -->
 <Dialog
 	open={!!printModeChangeDialog}
 	onOpenChange={(open) => !open && (printModeChangeDialog = null)}
@@ -764,7 +1116,6 @@
 	</DialogContent>
 </Dialog>
 
-<!-- Final Confirm/Unconfirm Dialog -->
 <Dialog open={!!finalConfirmDialog} onOpenChange={(open) => !open && (finalConfirmDialog = null)}>
 	<DialogContent class="max-h-[80vh] overflow-y-auto">
 		<DialogHeader>
@@ -801,7 +1152,6 @@
 	</DialogContent>
 </Dialog>
 
-<!-- Preview Dialog -->
 <Dialog open={!!previewUrl} onOpenChange={(open) => !open && closePreview()}>
 	<DialogContent class="flex max-h-[90vh] max-w-4xl flex-col p-0">
 		<DialogHeader class="border-b px-6 py-4">
@@ -954,6 +1304,7 @@
 								</TableHeader>
 								<TableBody>
 									{#each visibleItems as item}
+										<!-- MASTER ROW -->
 										<TableRow
 											class={cn(
 												'transition-opacity duration-200 ease-in-out',
@@ -1018,7 +1369,8 @@
 											</TableCell>
 											<TableCell>{new Date(item.created_at).toLocaleString()}</TableCell>
 											<TableCell>
-												{#if !item.isMerged && !item.hidden}
+												{#if !item.isMerged && !item.hidden && !splitResults[item.id]}
+													<!-- ✅ Show toggle ONLY when NOT split -->
 													<div class="flex items-center gap-2">
 														<Tooltip>
 															<TooltipTrigger>
@@ -1054,199 +1406,125 @@
 												{:else if item.isMerged}
 													<span class="text-sm text-muted-foreground">Simplex</span>
 												{:else}
-													<span class="text-sm text-muted-foreground">
-														{itemPrintMode[item.id] === 'simplex' ? 'Simplex' : 'Duplex'}
-													</span>
+													<!-- ✅ Empty when split -->
 												{/if}
 											</TableCell>
 											<TableCell class="text-right">
-												<div class="hidden justify-end gap-2 md:flex">
-													<div class="flex rounded-md border border-input shadow-sm">
-														<Tooltip>
-															<TooltipTrigger>
-																<Button
-																	variant="outline"
-																	size="sm"
-																	class="rounded-r-none border-r"
-																	onclick={() => openPreview(item.file)}
-																	disabled={mergingFiles[item.file]}
-																>
-																	<Eye class="h-4 w-4" />
-																</Button>
-															</TooltipTrigger>
-															<TooltipContent>Preview</TooltipContent>
-														</Tooltip>
-														<Tooltip>
-															<TooltipTrigger>
-																<Button
-																	variant="outline"
-																	size="sm"
-																	class="rounded-l-none"
-																	onclick={() => openInNewTab(item.file)}
-																	disabled={mergingFiles[item.file]}
-																>
-																	<ExternalLink class="h-4 w-4" />
-																</Button>
-															</TooltipTrigger>
-															<TooltipContent>Open in new tab</TooltipContent>
-														</Tooltip>
-													</div>
-													<Tooltip>
-														<TooltipTrigger>
-															<Button
-																variant="default"
-																size="sm"
-																disabled={printing[item.id] ||
-																	charging[item.id] ||
-																	mergingFiles[item.file]}
-																onclick={() => printPdf(item)}
-															>
-																{#if charging[item.id]}
-																	<CreditCard class="mr-1 h-3 w-3 animate-pulse" /> Charging...
-																{:else if printing[item.id]}
-																	<LoaderCircle class="mr-1 h-3 w-3 animate-spin" /> Printing...
-																{:else}
-																	<Printer class="h-4 w-4" /> Print
-																{/if}
-															</Button>
-														</TooltipTrigger>
-														<TooltipContent>
-															{itemPrintMode[item.id] === 'simplex'
-																? 'Print Simplex (will charge)'
-																: 'Print Duplex (free)'}
-														</TooltipContent>
-													</Tooltip>
-													{#if item.processed && !item.isMerged}
-														<Tooltip>
-															<TooltipTrigger>
-																<Button
-																	variant="outline"
-																	size="sm"
-																	disabled={unprocessingItem[item.id]}
-																	onclick={() => unprocessItem(item)}
-																>
-																	{#if unprocessingItem[item.id]}
-																		<LoaderCircle class="h-4 w-4 animate-spin" />
-																	{:else}
-																		<X class="h-4 w-4" />
-																	{/if}
-																</Button>
-															</TooltipTrigger>
-															<TooltipContent>Unprocess</TooltipContent>
-														</Tooltip>
-													{:else if !item.processed && !item.isMerged}
-														<Tooltip>
-															<TooltipTrigger>
-																<Button
-																	variant="outline"
-																	size="sm"
-																	disabled={unprocessingItem[item.id]}
-																	onclick={() => confirmItem(item)}
-																>
-																	{#if unprocessingItem[item.id]}
-																		<LoaderCircle class="h-4 w-4 animate-spin" />
-																	{:else}
-																		<CircleCheckBig class="h-4 w-4" />
-																	{/if}
-																</Button>
-															</TooltipTrigger>
-															<TooltipContent>Confirm</TooltipContent>
-														</Tooltip>
-													{/if}
-													{#if item.isMerged}
-														<Tooltip>
-															<TooltipTrigger>
-																<Button
-																	variant="destructive"
-																	size="icon"
-																	onclick={() => unmerge(item.user, item.file)}
-																>
-																	<X class="h-4 w-4" />
-																</Button>
-															</TooltipTrigger>
-															<TooltipContent>Unmerge</TooltipContent>
-														</Tooltip>
-													{/if}
-												</div>
-												<div class="md:hidden">
-													<DropdownMenu>
-														<DropdownMenuTrigger>
-															<Button variant="outline" size="icon">
-																<ChevronDown class="h-4 w-4" />
-															</Button>
-														</DropdownMenuTrigger>
-														<DropdownMenuContent align="end" class="w-56">
-															<DropdownMenuItem
-																onclick={() => openPreview(item.file)}
-																disabled={mergingFiles[item.file]}
-															>
-																<Eye class="mr-2 h-4 w-4" /> Preview
-															</DropdownMenuItem>
-															<DropdownMenuItem
-																onclick={() => openInNewTab(item.file)}
-																disabled={mergingFiles[item.file]}
-															>
-																<ExternalLink class="mr-2 h-4 w-4" /> Open in new tab
-															</DropdownMenuItem>
-															<DropdownMenuSeparator />
-															<DropdownMenuItem
-																onclick={() => printPdf(item)}
-																disabled={printing[item.id] ||
-																	charging[item.id] ||
-																	mergingFiles[item.file]}
-																class={cn(
-																	'flex items-center',
-																	(printing[item.id] || charging[item.id]) && 'opacity-75'
-																)}
-															>
-																{#if charging[item.id]}
-																	<CreditCard class="mr-2 h-3 w-3 animate-pulse" /> Charging...
-																{:else if printing[item.id]}
-																	<LoaderCircle class="mr-2 h-3 w-3 animate-spin" /> Printing...
-																{:else}
-																	<Printer class="mr-2 h-4 w-4" /> Print ({itemPrintMode[
-																		item.id
-																	] === 'simplex'
-																		? 'Simplex'
-																		: 'Duplex'})
-																{/if}
-															</DropdownMenuItem>
-															{#if item.processed && !item.isMerged}
-																<DropdownMenuItem
-																	onclick={() => unprocessItem(item)}
-																	disabled={unprocessingItem[item.id]}
-																>
-																	{#if unprocessingItem[item.id]}
-																		<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Unprocessing...
-																	{:else}
-																		<X class="mr-2 h-4 w-4" /> Unprocess
-																	{/if}
-																</DropdownMenuItem>
-															{:else if !item.processed && !item.isMerged}
-																<DropdownMenuItem
-																	onclick={() => confirmItem(item)}
-																	disabled={unprocessingItem[item.id]}
-																>
-																	{#if unprocessingItem[item.id]}
-																		<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Confirming...
-																	{:else}
-																		<CircleCheckBig class="mr-2 h-4 w-4" /> Confirm
-																	{/if}
-																</DropdownMenuItem>
-															{/if}
-															{#if item.isMerged}
-																<DropdownMenuItem
-																	onclick={() => unmerge(item.user, item.file)}
-																	class="text-destructive focus:text-destructive"
-																>
-																	<X class="mr-2 h-4 w-4" /> Unmerge
-																</DropdownMenuItem>
-															{/if}
-														</DropdownMenuContent>
-													</DropdownMenu>
-												</div>
+												{@render mainRowActions(item)}
 											</TableCell>
 										</TableRow>
+
+										<!-- SPLIT ROWS -->
+										{#if splitResults[item.id]}
+											{#if splitResults[item.id].color}
+												<TableRow class="bg-muted/20">
+													<TableCell></TableCell>
+													<TableCell class="font-medium">
+														<FileText class="mr-1 inline h-3 w-3" />
+														{item.file.split('/').pop()} (Color)
+													</TableCell>
+													<TableCell><Badge variant="outline">Split</Badge></TableCell>
+													<TableCell>{new Date(item.created_at).toLocaleString()}</TableCell>
+													<TableCell>
+														<!-- ✅ Toggle for color split -->
+														<div class="flex items-center gap-2">
+															<Tooltip>
+																<TooltipTrigger>
+																	<Button
+																		variant={splitPrintMode[`color-${item.id}`] === 'duplex'
+																			? 'default'
+																			: 'outline'}
+																		size="sm"
+																		class="h-8 w-8 p-0"
+																		onclick={() => (splitPrintMode[`color-${item.id}`] = 'duplex')}
+																	>
+																		<Repeat class="h-4 w-4" />
+																	</Button>
+																</TooltipTrigger>
+																<TooltipContent>Duplex (free)</TooltipContent>
+															</Tooltip>
+															<Tooltip>
+																<TooltipTrigger>
+																	<Button
+																		variant={splitPrintMode[`color-${item.id}`] === 'simplex'
+																			? 'default'
+																			: 'outline'}
+																		size="sm"
+																		class="h-8 w-8 p-0"
+																		onclick={() => (splitPrintMode[`color-${item.id}`] = 'simplex')}
+																	>
+																		<FileText class="h-4 w-4" />
+																	</Button>
+																</TooltipTrigger>
+																<TooltipContent>Simplex (1 taka per sheet)</TooltipContent>
+															</Tooltip>
+														</div>
+													</TableCell>
+													<TableCell class="text-right">
+														{@render splitRowActions(
+															{ file: splitResults[item.id].color! },
+															'Color',
+															splitPrintMode[`color-${item.id}`] || 'duplex'
+														)}
+													</TableCell>
+												</TableRow>
+											{/if}
+											{#if splitResults[item.id].grayscale}
+												<TableRow class="bg-muted/20">
+													<TableCell></TableCell>
+													<TableCell class="font-medium">
+														<FileText class="mr-1 inline h-3 w-3" />
+														{item.file.split('/').pop()} (Grayscale)
+													</TableCell>
+													<TableCell><Badge variant="outline">Split</Badge></TableCell>
+													<TableCell>{new Date(item.created_at).toLocaleString()}</TableCell>
+													<TableCell>
+														<!-- ✅ Toggle for grayscale split -->
+														<div class="flex items-center gap-2">
+															<Tooltip>
+																<TooltipTrigger>
+																	<Button
+																		variant={splitPrintMode[`gray-${item.id}`] === 'duplex'
+																			? 'default'
+																			: 'outline'}
+																		size="sm"
+																		class="h-8 w-8 p-0"
+																		onclick={() => (splitPrintMode[`gray-${item.id}`] = 'duplex')}
+																	>
+																		<Repeat class="h-4 w-4" />
+																	</Button>
+																</TooltipTrigger>
+																<TooltipContent>Duplex (free)</TooltipContent>
+															</Tooltip>
+															<Tooltip>
+																<TooltipTrigger>
+																	<Button
+																		variant={splitPrintMode[`gray-${item.id}`] === 'simplex'
+																			? 'default'
+																			: 'outline'}
+																		size="sm"
+																		class="h-8 w-8 p-0"
+																		onclick={() => (splitPrintMode[`gray-${item.id}`] = 'simplex')}
+																	>
+																		<FileText class="h-4 w-4" />
+																	</Button>
+																</TooltipTrigger>
+																<TooltipContent>Simplex (1 taka per sheet)</TooltipContent>
+															</Tooltip>
+														</div>
+													</TableCell>
+													<TableCell class="text-right">
+														{@render splitRowActions(
+															{ file: splitResults[item.id].grayscale! },
+															'Grayscale',
+															splitPrintMode[`gray-${item.id}`] || 'duplex'
+														)}
+													</TableCell>
+												</TableRow>
+											{/if}
+										{/if}
+
+										<!-- MERGED EXPANSION -->
 										{#if item.isMerged && item.mergedFrom && item.mergedId && expandedMergedItems[item.mergedId]}
 											{#each item.mergedFrom as originalFile}
 												{#if queue.find((q) => q.file === originalFile && q.user === item.user)}

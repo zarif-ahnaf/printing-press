@@ -1,12 +1,12 @@
-from ninja import Router, Query
+from ninja import Query, Router
 
 from apps.queue.models import Queue
 
 from ....auth import AuthBearer
 from ....decorators import admin_required
+from ....filters.queue import QueueFilter
 from ....http import HttpRequest
 from ....schemas.queue import QueueFileResponse, QueueListResponse
-from ....filters.queue import QueueFilter
 
 router = Router(tags=["Queue"])
 
@@ -24,10 +24,8 @@ def list_queue(
 ):
     queryset = Queue.objects.all()
 
-    if query.include_processed:
-        queryset = queryset.filter(processed=True)
-    else:
-        queryset = queryset.filter(processed=False)
+    if not query.include_processed:
+        queryset = Queue.objects.filter(processed=False)
 
     items = [
         QueueFileResponse(
