@@ -4,6 +4,7 @@ from ninja import Router
 from apps.printers.models import Printers
 
 from ....decorators import admin_required
+from ....http import HttpRequest
 from ....schemas.printer import PrinterDeleteSchema
 
 router = Router(tags=["Admin Printers"])
@@ -11,7 +12,7 @@ router = Router(tags=["Admin Printers"])
 
 @router.post("{id}/", response=PrinterDeleteSchema)
 @admin_required
-def printer_remove(request, id: int):
+def printer_remove(request: HttpRequest, id: int):
     printer = get_object_or_404(Printers, id=id)
     printer.delete()
     return PrinterDeleteSchema(id=id, message="Printer removed successfully.")

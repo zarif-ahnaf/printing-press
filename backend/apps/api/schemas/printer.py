@@ -11,6 +11,13 @@ class PrinterCreateSchema(Schema):
 class PrinterOutSchema(PrinterCreateSchema):
     id: int
     image_url: str | None = None
+    decomissioned: bool
+
+
+class PrinterDecomissionSchema(Schema):
+    id: int
+    decomissioned: bool
+    message: str
 
 
 class PrinterDeleteSchema(Schema):

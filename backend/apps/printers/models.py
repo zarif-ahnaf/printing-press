@@ -10,8 +10,10 @@ class Printers(models.Model):
     simplex_charge = models.DecimalField(max_digits=10, null=True, decimal_places=2)
     duplex_charge = models.DecimalField(max_digits=10, null=True, decimal_places=2)
 
+    decomissioned = models.BooleanField(default=False)
+
     def __str__(self):
-        return self.name
+        return f"{self.name} ({'Color' if self.is_color else 'B&W'}) - {'Decomissioned' if self.decomissioned else 'Active'}"
 
 
 class PrinterArrangements(models.Model):
@@ -31,9 +33,17 @@ class PrinterArrangements(models.Model):
         blank=True,
     )
 
+    decomissioned = models.BooleanField(default=False)
+
+    def save(self, *args, **kwargs):
+        if self.decomissioned:
+            raise ValueError("Cannot update a decomissioned printer arrangement.")
+        super().save(*args, **kwargs)
+
     def __str__(self):
         description = (
             "Arrangement: "
+            + ("Decomissioned; " if self.decomissioned else "Active; ")
             + (
                 f"Color Printer - {self.color_printer.model}; "
                 if self.color_printer

@@ -7,6 +7,7 @@ from ninja import File, Form, Router
 from ninja.errors import HttpError
 from ninja.files import UploadedFile
 
+from apps.printers.models import PrinterArrangements
 from apps.queue.models import Queue
 
 from ...auth import AuthBearer
@@ -53,6 +54,10 @@ def queue_files(
     if not files:
         raise HttpError(400, "No files provided")
 
+    printer_arrangement = get_object_or_404(
+        PrinterArrangements, id=payload.printer_arrangement
+    )
+
     total_pages = 0
     file_data_list: list[tuple[str, bytes, int]] = []
 
@@ -94,6 +99,7 @@ def queue_files(
                 file=file_for_db,
                 user=target_user,
                 page_count=num_pages,
+                printer_arrangement=printer_arrangement,
             )
         )
 

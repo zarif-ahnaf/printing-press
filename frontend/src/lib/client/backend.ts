@@ -41,6 +41,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/admin/printers/{printer_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Printers Update */
+        patch: operations["apps_api_views_admin_printers_printers_update"];
+        trace?: never;
+    };
+    "/api/admin/printers/add/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Printers Add */
+        post: operations["apps_api_views_admin_printers_add_printers_add"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/admin/printers/remove/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Printer Remove */
+        post: operations["apps_api_views_admin_printers_remove_printer_remove"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/admin/queue/": {
         parameters: {
             query?: never;
@@ -175,6 +226,23 @@ export interface paths {
         put?: never;
         /** Convert To Pdf */
         post: operations["apps_api_views_convert_pdf_convert_to_pdf"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/printers/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Printer List */
+        get: operations["apps_api_views_printers_printer_list"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -442,6 +510,39 @@ export interface components {
             /** Description */
             description?: string | null;
         };
+        /** PrinterOutSchema */
+        PrinterOutSchema: {
+            /** Name */
+            name: string;
+            /** Is Color */
+            is_color: boolean;
+            /** Simplex Charge */
+            simplex_charge?: number | null;
+            /** Duplex Charge */
+            duplex_charge?: number | null;
+            /** Id */
+            id: number;
+            /** Image Url */
+            image_url?: string | null;
+        };
+        /** PrinterCreateSchema */
+        PrinterCreateSchema: {
+            /** Name */
+            name: string;
+            /** Is Color */
+            is_color: boolean;
+            /** Simplex Charge */
+            simplex_charge?: number | null;
+            /** Duplex Charge */
+            duplex_charge?: number | null;
+        };
+        /** PrinterDeleteSchema */
+        PrinterDeleteSchema: {
+            /** Id */
+            id: number;
+            /** Message */
+            message: string;
+        };
         /** QueueFilter */
         QueueFilter: {
             /** Include Processed */
@@ -673,6 +774,87 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    apps_api_views_admin_printers_printers_update: {
+        parameters: {
+            query?: {
+                image?: string | null;
+            };
+            header?: never;
+            path: {
+                printer_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PrinterCreateSchema"] | null;
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrinterOutSchema"];
+                };
+            };
+        };
+    };
+    apps_api_views_admin_printers_add_printers_add: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * Image
+                     * Format: binary
+                     */
+                    image: string;
+                    payload: components["schemas"]["PrinterCreateSchema"];
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrinterOutSchema"];
+                };
+            };
+        };
+    };
+    apps_api_views_admin_printers_remove_printer_remove: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrinterDeleteSchema"];
                 };
             };
         };
@@ -951,6 +1133,26 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    apps_api_views_printers_printer_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrinterOutSchema"][];
+                };
             };
         };
     };

@@ -5,6 +5,7 @@ from ninja import Schema
 
 class QueueFileUpload(Schema):
     user_id: Optional[int] = None
+    printer_arrangement: int
 
 
 class QueueFileResponse(Schema):

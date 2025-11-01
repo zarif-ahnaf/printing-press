@@ -1,16 +1,19 @@
-from ninja import File, Router, UploadedFile
+from ninja import File, Form, Router, UploadedFile
 
 from apps.printers.models import Printers
 
 from ....decorators import admin_required
-from ....schemas.printer import PrinterCreateSchema
+from ....http import HttpRequest
+from ....schemas.printer import PrinterCreateSchema, PrinterOutSchema
 
 router = Router(tags=["Admin Printers"])
 
 
-@router.post("", response=PrinterCreateSchema)
+@router.post("", response=PrinterOutSchema)
 @admin_required
-def printers_add(request, image: File[UploadedFile], payload: PrinterCreateSchema):
+def printers_add(
+    request: HttpRequest, image: File[UploadedFile], payload: Form[PrinterCreateSchema]
+):
     data = Printers.objects.create(
         name=payload.name,
         image=image,
@@ -18,4 +21,5 @@ def printers_add(request, image: File[UploadedFile], payload: PrinterCreateSchem
         simplex_charge=payload.simplex_charge,
         duplex_charge=payload.duplex_charge,
     )
+
     return data
