@@ -26,7 +26,7 @@
 
 	interface Transaction {
 		id: number;
-		transaction_type: 'deposit' | 'charge';
+		transaction_type: string;
 		amount: string;
 		description: string;
 		created_at: string;
@@ -36,20 +36,8 @@
 		id: number;
 		username: string;
 		email: string;
-		first_name: string;
-		last_name: string;
-	}
-
-	// --- Helper: Safely parse JSON without consuming original body ---
-	async function safeJson(response: Response): Promise<any> {
-		if (!response.bodyUsed && response.headers.get('content-type')?.includes('application/json')) {
-			try {
-				return await response.clone().json();
-			} catch {
-				// JSON parse failed
-			}
-		}
-		return {};
+		first_name?: string | null | undefined;
+		last_name?: string | null | undefined;
 	}
 
 	// --- State ---
@@ -71,6 +59,11 @@
 		{ value: 'charge', label: 'Deduct Funds (Charge)' }
 	];
 
+	const getAuthHeaders = () => ({
+		Authorization: `Bearer ${token.value}`,
+		'Content-Type': 'application/json'
+	});
+
 	function getDisplayName(user: UserItem): string {
 		if (user.first_name || user.last_name) {
 			return `${user.first_name} ${user.last_name}`.trim();
@@ -81,19 +74,19 @@
 	async function fetchUsers(searchTerm: string = '') {
 		isLoadingUsers = true;
 		try {
-			const res = await client.GET('/api/users/', {
-				params: searchTerm ? { query: { name: searchTerm } } : {},
+			const { data, error } = await client.GET('/api/users/', {
 				headers: {
 					Authorization: `Bearer ${token.value}`
+				},
+				params: {
+					query: {
+						name: searchTerm || undefined
+					}
 				}
 			});
 
-			if (!res.response.ok) {
-				const errData = await safeJson(res.response);
-				throw new Error(errData.detail || 'Failed to fetch users');
-			}
-			const data = await safeJson(res.response);
-			users = data as UserItem[];
+			if (error) throw new Error('Failed to fetch users');
+			users = data;
 		} catch (err) {
 			const message = (err as Error).message;
 			error = message;
@@ -107,7 +100,7 @@
 	async function fetchBalance() {
 		if (!selectedUser) return;
 		try {
-			const res = await client.GET('/api/balance/{username}', {
+			const { data, error } = await client.GET('/api/admin/balance/{username}', {
 				params: {
 					path: {
 						username: selectedUser.username
@@ -118,12 +111,10 @@
 				}
 			});
 
-			if (!res.response.ok) {
-				const errData = await safeJson(res.response);
-				throw new Error(errData.detail || 'Failed to fetch balance');
+			if (error) {
+				throw new Error(error || 'Failed to fetch balance');
 			}
-			const data = await safeJson(res.response);
-			balance = (data as BalanceResponse).balance;
+			balance = data.balance;
 		} catch (err) {
 			const message = (err as Error).message;
 			error = message;
@@ -134,7 +125,7 @@
 	async function fetchTransactions() {
 		if (!selectedUser) return;
 		try {
-			const res = await client.GET('/api/transactions/{username}', {
+			const { data, error } = await client.GET('/api/admin/transactions/{username}', {
 				params: {
 					path: {
 						username: selectedUser.username
@@ -145,12 +136,10 @@
 				}
 			});
 
-			if (!res.response.ok) {
-				const errData = await safeJson(res.response);
-				throw new Error(errData.detail || 'Failed to fetch transactions');
+			if (error) {
+				throw new Error(error || 'Failed to fetch transactions');
 			}
-			const data = await safeJson(res.response);
-			transactions = data as Transaction[];
+			transactions = data ?? [];
 		} catch (err) {
 			const message = (err as Error).message;
 			error = message;
@@ -187,16 +176,35 @@
 				username: selectedUser.username
 			};
 
-			const res = await client.POST(endpoint, {
+			const { data, error } = await client.POST(endpoint, {
 				headers: {
-					Authorization: `Bearer ${token.value}`
+					Authorization: `Bearer ${token.value}`,
+					'Content-Type': 'application/json'
 				},
 				body: payload
 			});
 
-			if (!res.response.ok) {
-				const errData = await safeJson(res.response);
-				throw new Error(errData.detail || 'Operation failed');
+			if (error) {
+				// Normalize various error shapes into a string message for Error constructor
+				const key = Object.keys(error)[0];
+				const err = (error as any)[key];
+				let errMsg: string;
+
+				if (typeof err === 'string') {
+					errMsg = err;
+				} else if (Array.isArray(err)) {
+					errMsg = err.join(', ');
+				} else if (err && typeof err === 'object') {
+					try {
+						errMsg = JSON.stringify(err);
+					} catch {
+						errMsg = String(err);
+					}
+				} else {
+					errMsg = String(err);
+				}
+
+				throw new Error(errMsg || 'Operation failed');
 			}
 
 			toast.success(
@@ -266,7 +274,7 @@
 			</div>
 		</div>
 
-		<!-- User Search -->
+		<!-- User Search (inspired by your reference) -->
 		<Card class="mb-6">
 			<CardHeader>
 				<CardTitle class="flex items-center gap-2">

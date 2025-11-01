@@ -140,10 +140,10 @@
 	<div class="relative z-10 container mx-auto px-4 py-24">
 		<div class="mx-auto max-w-4xl text-center">
 			<h1
-				class="mb-6 bg-gradient-to-r from-foreground to-muted-foreground bg-clip-text text-4xl font-bold text-transparent md:text-6xl"
+				class="mb-6 bg-linear-to-r from-foreground to-muted-foreground bg-clip-text text-4xl font-bold text-transparent md:text-6xl"
 			>
 				Premium <span
-					class="after:animate-wave relative inline-block after:absolute after:bottom-[-4px] after:left-0 after:h-1 after:w-full after:rounded after:bg-gradient-to-r after:from-primary after:to-primary/80"
+					class="after:animate-wave relative inline-block after:absolute after:-bottom-1 after:left-0 after:h-1 after:w-full after:rounded after:bg-linear-to-r after:from-primary after:to-primary/80"
 					>Printing</span
 				> Services
 			</h1>

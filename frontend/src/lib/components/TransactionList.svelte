@@ -20,7 +20,7 @@
 
 	type TransactionResponse = {
 		id: number;
-		transaction_type: 'deposit' | 'charge';
+		transaction_type: string;
 		amount: string;
 		description: string;
 		created_at: string;

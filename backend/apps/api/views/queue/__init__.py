@@ -9,17 +9,17 @@ from ninja.files import UploadedFile
 
 from apps.queue.models import Queue
 
-from ..auth import AuthBearer
-from ..decorators import login_required
-from ..http import HttpRequest
-from ..schemas.queue import (
+from ...auth import AuthBearer
+from ...http import HttpRequest
+from ...schemas.queue import (
+    ChangePrintModeRequest,
+    ChangeProcessStatusResponse,
     ProcessStatusResponse,
-    QueueFileResponse,
+    QueueDeleteResponse,
     QueueFileUpload,
-    QueueListResponse,
     QueueUploadResponse,
 )
-from ..utils.pdf import count_pdf_pages
+from ...utils.pdf import count_pdf_pages
 
 router = Router(tags=["Queue"])
 
@@ -107,31 +107,47 @@ def queue_files(
     )
 
 
-@router.get(
-    "",
-    auth=AuthBearer(),
-    response=QueueListResponse,
-    summary="List queued files",
-)
-@login_required
-def list_queue(request: HttpRequest):
+@router.post("{queue_id}/print-mode", auth=AuthBearer())
+def change_page_mode(
+    request: HttpRequest, payload: ChangePrintModeRequest, queue_id: int
+):
+    queue_item = get_object_or_404(Queue, id=queue_id)
     current_user = request.auth
-    queryset = Queue.objects.filter(user=current_user)
+    if queue_item.user != current_user and not current_user.is_staff:
+        raise HttpError(403, "You cannot modify this queue item.")
+    old_mode = queue_item.print_mode
+    queue_item.print_mode = payload.page_type
+    queue_item.save()
+    return ChangeProcessStatusResponse(
+        id=queue_item.pk,
+        message=f"Print mode updated from {old_mode} to {queue_item.print_mode}",
+    )
 
-    items = [
-        QueueFileResponse(
-            id=item.pk,
-            file=request.build_absolute_uri(item.file.url),
-            processed=item.processed,
-            created_at=item.created_at.isoformat(),
-            user=item.user.username,
-            user_id=item.user.pk,
-            page_count=item.page_count,
-        )
-        for item in queryset
-    ]
 
-    return QueueListResponse(queue=items)
+@router.delete(
+    "{queue_id}/delete",
+    auth=AuthBearer(),
+    response=QueueDeleteResponse,
+    summary="Mark file as unprocessed",
+)
+def remove_queue_file(
+    request: HttpRequest,
+    queue_id: int,
+):
+    current_user = request.auth
+    queue_item = get_object_or_404(Queue, id=queue_id)
+
+    if queue_item.user != current_user and not current_user.is_staff:
+        raise HttpError(403, "You cannot modify this queue item.")
+
+    deleted_id = queue_item.pk
+
+    queue_item.delete()
+
+    return QueueDeleteResponse(
+        id=deleted_id,
+        message=f"{queue_item.pk} has been deleted successfully.",
+    )
 
 
 @router.post(

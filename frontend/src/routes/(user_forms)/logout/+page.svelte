@@ -15,19 +15,14 @@
 	let next = $state('/login');
 
 	onMount(async () => {
-		// 1. First, send the logout request while still authenticated
-		try {
-			await client.DELETE('/api/user/logout/');
-			// But usually, 204 No Content is expected
-		} catch (error) {
-			console.error('Error during logout request:', error);
-			// Even if server fails, we still clear local token for UX safety
-		} finally {
-			// 2. Always clear the token locally after attempting logout
-			token.set(null);
+		// Clear auth state
+		token.set(null);
+		// Send logout request to backend
+		const { error } = await client.DELETE('/api/user/logout/');
+		if (error) {
+			console.error('Logout error:', error);
 		}
-
-		// 3. Parse and validate `next` from URL
+		// Parse and validate `next` from URL
 		const urlParams = new URLSearchParams(window.location.search);
 		const nextParam = urlParams.get('next');
 		if (nextParam && isValidRedirectPath(nextParam)) {

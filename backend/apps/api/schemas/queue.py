@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Literal, Optional
 
 from ninja import Schema
 
@@ -15,6 +15,7 @@ class QueueFileResponse(Schema):
     user: str
     user_id: int
     page_count: Optional[int]
+    print_mode: Literal["single-sided", "double-sided"]
 
 
 class QueueListResponse(Schema):
@@ -31,4 +32,18 @@ class QueueUploadResponse(Schema):
 class ProcessStatusResponse(Schema):
     id: int
     processed: bool
+    message: str
+
+
+class QueueDeleteResponse(Schema):
+    id: int
+    message: str
+
+
+class ChangePrintModeRequest(Schema):
+    page_type: Literal["single-sided", "double-sided"]
+
+
+class ChangeProcessStatusResponse(Schema):
+    id: int
     message: str

@@ -33,7 +33,7 @@
 		DropdownMenuItem,
 		DropdownMenuTrigger
 	} from '$lib/components/ui/dropdown-menu';
-
+	import { NONBLANK_URL, PDF_CONVERT_URL } from '$lib/constants/backend';
 	import { goto } from '$app/navigation';
 	import { uuidv4 } from '$lib/functions/uuid4';
 	import { client } from '$lib/client';
@@ -64,15 +64,10 @@
 		id: number;
 		username: string;
 		email: string;
-		first_name: string;
-		last_name: string;
+		first_name?: null | undefined | string;
+		last_name?: null | undefined | string;
 	}
-	interface QueueUploadResponse {
-		message: string;
-		total_pages: number;
-		queue_ids: number[];
-		total_charged_bdt: string;
-	}
+
 	interface PDFFile {
 		id: string;
 		file: File;
@@ -84,18 +79,6 @@
 		isConverting: boolean;
 		isCurrentlyOptimized: boolean;
 		previewUrl: string;
-	}
-
-	// --- SAFE JSON HELPER ---
-	async function safeJson(response: Response): Promise<any> {
-		if (!response.bodyUsed && response.headers.get('content-type')?.includes('application/json')) {
-			try {
-				return await response.clone().json();
-			} catch {
-				// JSON parse failed
-			}
-		}
-		return {};
 	}
 
 	function formatFileSize(bytes: number): string {
@@ -130,24 +113,26 @@
 
 	async function fetchUsers(searchTerm: string = '') {
 		isLoadingUsers = true;
+		console.log(searchTerm);
 		try {
-			const headers: Record<string, string> = {};
-			if (token.value) {
-				headers.Authorization = `Bearer ${token.value}`;
-			}
-
-			const res = await client.GET('/api/users/', {
-				params: searchTerm ? { query: { name: searchTerm } } : {},
-				headers
+			const { data, error } = await client.GET('/api/users/', {
+				headers: {
+					Authorization: `Bearer ${token.value}`
+				},
+				params: {
+					query: searchTerm
+						? {
+								name: searchTerm
+							}
+						: {}
+				}
 			});
 
-			if (!res.response.ok) {
-				const errData = await safeJson(res.response);
-				throw new Error(errData.detail || `Failed to fetch users: ${res.response.status}`);
+			if (error) {
+				throw new Error(`Failed to fetch users: ${error}`);
 			}
 
-			const userData = await safeJson(res.response);
-			users = userData as APIUser[];
+			users = data;
 		} catch (error: any) {
 			toast.error('Failed to load users', {
 				description: error.message || 'An unknown error occurred',
@@ -167,17 +152,18 @@
 		if (token.value) {
 			headers.Authorization = `Bearer ${token.value}`;
 		}
-		const res = await client.POST('/api/convert/merge/', {
-			body: formData as any,
-			headers
+
+		const response = await fetch(PDF_CONVERT_URL, {
+			method: 'POST',
+			headers,
+			body: formData
 		});
 
-		if (!res.response.ok) {
-			const errData = await safeJson(res.response);
-			throw new Error(errData.detail || `Failed to convert ${file.name} to PDF`);
+		if (!response.ok) {
+			throw new Error(`Failed to convert ${file.name} to PDF`);
 		}
 
-		const blob = await res.response.blob();
+		const blob = await response.blob();
 		return new File([blob], file.name.replace(/\.[^/.]+$/, '.pdf'), {
 			type: 'application/pdf'
 		});
@@ -368,23 +354,25 @@
 		}
 
 		try {
-			const res = await client.POST('/api/queue/', {
-				body: formData as any,
-				headers
+			const { data, error } = await client.POST('/api/queue/', {
+				headers,
+				body: {
+					files: new Array<string>()
+				},
+				bodySerializer() {
+					return formData;
+				}
 			});
-			if (res.response.ok) {
-				const data = (await safeJson(res.response)) as QueueUploadResponse;
-				filesToSubmit.forEach((pdfFile) => {
-					pdfFile.enqueueStatus = 'success';
-				});
-				toast.success(data.message, { duration: 4000 });
-				goto('/transactions');
-			} else {
-				const errorData = await safeJson(res.response);
-				const errorMsg =
-					errorData?.detail || errorData?.message || `Enqueue failed (${res.response.status})`;
-				throw new Error(errorMsg);
+
+			if (error) {
+				throw new Error(error);
 			}
+
+			filesToSubmit.forEach((pdfFile) => {
+				pdfFile.enqueueStatus = 'success';
+			});
+			toast.success(data.message, { duration: 4000 });
+			goto('/transactions');
 		} catch (error: any) {
 			toast.error('Enqueue failed', {
 				description: error.message || 'An unknown error occurred',
@@ -394,7 +382,6 @@
 			isSubmitting = false;
 		}
 	}
-
 	async function optimizeFile(pdfFile: PDFFile) {
 		try {
 			pdfFile.isOptimizing = true;
@@ -408,16 +395,17 @@
 				headers.Authorization = `Bearer ${token.value}`;
 			}
 
-			const res = await client.POST('/api/convert/nonblank/', {
-				body: formData as any,
-				headers
+			const response = await fetch(NONBLANK_URL, {
+				method: 'POST',
+				headers,
+				body: formData
 			});
-			if (!res.response.ok) {
-				const errData = await safeJson(res.response);
-				throw new Error(errData.detail || `Failed to process ${pdfFile.file.name}`);
+
+			if (!response.ok) {
+				throw new Error(`Failed to process ${pdfFile.file.name}`);
 			}
 
-			const blob = await res.response.blob();
+			const blob = await response.blob();
 			const optimizedFile = new File([blob], `cleaned_${pdfFile.file.name}`, {
 				type: 'application/pdf'
 			});

@@ -45,30 +45,21 @@
 		loading = true;
 
 		try {
-			const res = await client.POST('/api/user/login/', {
+			const { data, error } = await client.POST('/api/user/login/', {
 				body: {
-					username: username.trim(),
-					password: password.trim()
+					username,
+					password
 				}
 			});
-
-			if (res.response.ok && res.data?.token) {
-				token.set(res.data.token);
-				toast.success('Login successful!');
-				setTimeout(() => {
-					window.location.href = next;
-				}, 1000);
-			} else {
-				// Parse error manually since OpenAPI doesn't define it
-				let errorMessage = 'Invalid username or password.';
-				try {
-					const errorData = await res.response.json();
-					errorMessage = errorData.detail || errorData.message || errorMessage;
-				} catch {
-					// If not JSON, keep default message
-				}
-				toast.error(String(errorMessage));
+			if (error) {
+				toast.error(`Login failed. Please try again. Reason:${error}`);
 			}
+
+			token.set(data.token);
+			toast.success('Login successful!');
+			setTimeout(() => {
+				window.location.href = next;
+			}, 1000);
 		} catch (err) {
 			console.error('Login network error:', err);
 			toast.error('Network error. Please try again.');
@@ -76,6 +67,7 @@
 			loading = false;
 		}
 	}
+
 	function togglePasswordVisibility() {
 		showPassword = !showPassword;
 	}
