@@ -301,6 +301,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/printers/arrangement/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Printer Arrangements */
+        get: operations["apps_api_views_printers_arrangement_list_printer_arrangements"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/queue/": {
         parameters: {
             query?: never;
@@ -939,28 +956,16 @@ export interface operations {
     };
     apps_api_views_admin_printers_add_printers_add: {
         parameters: {
-            query?: never;
+            query?: {
+                image?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody: {
             content: {
-                "multipart/form-data": {
-                    /**
-                     * Image
-                     * Format: binary
-                     */
-                    image: string;
-                    /** Name */
-                    name: string;
-                    /** Is Color */
-                    is_color: boolean;
-                    /** Simplex Charge */
-                    simplex_charge?: number | null;
-                    /** Duplex Charge */
-                    duplex_charge?: number | null;
-                };
+                "application/json": components["schemas"]["PrinterCreateSchema"];
             };
         };
         responses: {
@@ -1336,6 +1341,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PrinterOutSchema"][];
+                };
+            };
+        };
+    };
+    apps_api_views_printers_arrangement_list_printer_arrangements: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrinterArrangementOutSchema"][];
                 };
             };
         };

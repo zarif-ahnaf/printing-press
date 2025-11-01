@@ -14,37 +14,40 @@
 	import { Switch } from '$lib/components/ui/switch';
 	import { Label } from '$lib/components/ui/label';
 	import { Input } from '$lib/components/ui/input';
+	import { client } from '$lib/client';
 
 	let isSubmitting = $state(false);
 	let name = $state('');
 	let isColor = $state(true);
-	let simplexCharge = $state('1.00');
-	let duplexCharge = $state('0.75');
+	let simplexCharge = $state('');
+	let duplexCharge = $state('');
 	let imageFile = $state<File | null>(null);
+	let imageUrl = $state<string | null>(null);
 
 	async function handleSubmit(e: Event) {
 		e.preventDefault();
+		if (!name.trim()) {
+			toast.error('Validation', { description: 'Printer name is required.' });
+			return;
+		}
+
 		isSubmitting = true;
 
-		const formData = new FormData();
-		formData.append('name', name);
-		formData.append('is_color', isColor.toString());
-		if (simplexCharge) formData.append('simplex_charge', simplexCharge);
-		if (duplexCharge) formData.append('duplex_charge', duplexCharge);
-		if (imageFile) formData.append('image', imageFile);
-
 		try {
-			const res = await fetch('/api/admin/printers/add/', {
-				method: 'POST',
-				body: formData
-				// ⚠️ Do NOT set Content-Type — browser must set boundary
+			const { error } = await client.POST('/api/admin/printers/add/', {
+				body: {
+					name: name.trim(),
+					is_color: Boolean(isColor),
+					simplex_charge: Number(simplexCharge),
+					duplex_charge: Number(duplexCharge),
+					image: imageFile
+				}
+				// Do NOT set contentType — let browser handle it
 			});
 
-			const data: { message?: string; [key: string]: unknown } = await res.json();
-
-			if (!res.ok) {
-				const errMsg = (data?.message || data?.detail || 'Failed to add printer') as string;
-				toast.error('Error', { description: errMsg });
+			if (error) {
+				const errMsg = error || 'An unknown error occurred while adding the printer.';
+				toast.error('Error', { description: String(errMsg) });
 				return;
 			}
 
@@ -59,35 +62,65 @@
 			});
 		} finally {
 			isSubmitting = false;
+			if (imageUrl) {
+				URL.revokeObjectURL(imageUrl);
+				imageUrl = null;
+			}
 		}
 	}
 
 	function handleImageChange(e: Event) {
 		const target = e.target as HTMLInputElement;
-		imageFile = target.files?.[0] || null;
+		const file = target.files?.[0] || null;
+		imageFile = file;
+
+		if (imageUrl) {
+			URL.revokeObjectURL(imageUrl);
+		}
+
+		if (file) {
+			imageUrl = URL.createObjectURL(file);
+		} else {
+			imageUrl = null;
+		}
 	}
 </script>
 
-<div class="container max-w-2xl py-8">
-	<Card>
-		<CardHeader>
-			<CardTitle class="flex items-center gap-2">
-				<Printer class="size-5" />
-				Add New Printer
-			</CardTitle>
-			<CardDescription>Register a new printer with pricing and capabilities.</CardDescription>
+<div class="flex min-h-[calc(100vh-4rem)] items-center justify-center p-4">
+	<Card class="w-full max-w-md overflow-hidden rounded-xl border bg-card shadow-lg">
+		<CardHeader class="space-y-2 text-center">
+			<div
+				class="mx-auto flex size-12 items-center justify-center rounded-lg bg-primary/10 text-primary"
+			>
+				<Printer class="size-6" />
+			</div>
+			<CardTitle class="text-xl font-semibold">Add New Printer</CardTitle>
+			<CardDescription class="text-muted-foreground">
+				Register a new printer with pricing and capabilities.
+			</CardDescription>
 		</CardHeader>
 		<CardContent>
-			<form class="space-y-6" onsubmit={handleSubmit}>
+			<form class="space-y-5" onsubmit={handleSubmit}>
 				<div class="space-y-2">
-					<Label for="name">Printer Name *</Label>
-					<Input id="name" placeholder="E.g., Epson L3250" bind:value={name} required />
+					<Label for="name" class="text-sm font-medium">Printer Name *</Label>
+					<Input
+						id="name"
+						placeholder="E.g., Epson L3250"
+						bind:value={name}
+						required
+						class="h-10"
+					/>
 				</div>
 
-				<div class="flex items-center justify-between rounded-lg border p-4">
+				<div
+					class={cn(
+						'flex items-center justify-between rounded-lg border p-4 transition-colors',
+						isColor ? 'border-primary/30 bg-primary/5' : 'border-border'
+					)}
+				>
 					<div class="space-y-0.5">
-						<Label>Color Printer</Label>
-						<p class="text-sm text-muted-foreground">
+						<Label class="text-sm font-medium">Color Printer</Label>
+						<p class="text-xs text-muted-foreground">
 							{isColor ? 'Supports full-color printing' : 'Grayscale only'}
 						</p>
 					</div>
@@ -100,39 +133,60 @@
 
 				<div class="grid grid-cols-2 gap-4">
 					<div class="space-y-2">
-						<Label for="simplex">Simplex Charge (BDT)</Label>
+						<Label for="simplex" class="text-sm font-medium">Simplex Charge (BDT)</Label>
 						<Input
 							id="simplex"
 							type="number"
 							step="0.01"
 							min="0"
-							placeholder="1.00"
+							placeholder="e.g. 1.00"
 							bind:value={simplexCharge}
+							class="h-10"
 						/>
 						<p class="text-xs text-muted-foreground">Per single-sided page</p>
 					</div>
 					<div class="space-y-2">
-						<Label for="duplex">Duplex Charge (BDT)</Label>
+						<Label for="duplex" class="text-sm font-medium">Duplex Charge (BDT)</Label>
 						<Input
 							id="duplex"
 							type="number"
 							step="0.01"
 							min="0"
-							placeholder="0.75"
+							placeholder="e.g. 0.75"
 							bind:value={duplexCharge}
+							class="h-10"
 						/>
 						<p class="text-xs text-muted-foreground">Per double-sided page</p>
 					</div>
 				</div>
 
 				<div class="space-y-2">
-					<Label for="image">Printer Image (Optional)</Label>
-					<Input id="image" type="file" accept="image/*" onchange={handleImageChange} />
+					<Label for="image" class="text-sm font-medium">Printer Image (Optional)</Label>
+					<Input
+						id="image"
+						type="file"
+						accept="image/*"
+						onchange={handleImageChange}
+						class="h-10"
+					/>
 				</div>
+
+				{#if imageUrl}
+					<div class="space-y-2">
+						<Label class="text-sm font-medium">Preview</Label>
+						<div class="flex justify-center">
+							<img
+								src={imageUrl}
+								alt="Printer preview"
+								class="max-h-40 w-auto rounded-md border object-contain"
+							/>
+						</div>
+					</div>
+				{/if}
 
 				<Button
 					type="submit"
-					class={cn('w-full', isSubmitting && 'opacity-80')}
+					class={cn('w-full py-2.5 text-sm font-medium', isSubmitting && 'opacity-80')}
 					disabled={isSubmitting}
 				>
 					{#if isSubmitting}

@@ -18,6 +18,7 @@ def admin_required(view_func):
     @wraps(view_func)
     def wrapper(request: HttpRequest, *args, **kwargs):
         user = request.auth
+        print(request.auth)
 
         if not hasattr(user, "is_staff") or isinstance(user, AnonymousUser):
             raise HttpError(401, "Authentication required.")

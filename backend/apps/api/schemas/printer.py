@@ -4,13 +4,13 @@ from ninja import Schema
 class PrinterCreateSchema(Schema):
     name: str
     is_color: bool
-    simplex_charge: float | None = None
-    duplex_charge: float | None = None
+    simplex_charge: int
+    duplex_charge: int
 
 
 class PrinterOutSchema(PrinterCreateSchema):
     id: int
-    image_url: str | None = None
+    image: str | None = None
     decomissioned: bool
 
 
