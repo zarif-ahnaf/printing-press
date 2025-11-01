@@ -10,3 +10,7 @@ class PrinterArrangementOutSchema(PrinterArrangementCreateSchema):
     id: int
     decomissioned: bool
 
+
+class PrinterArrangementDeleteSchema(Schema):
+    id: int
+    message: str
