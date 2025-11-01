@@ -21,8 +21,8 @@
 		DialogClose
 	} from '$lib/components/ui/dialog';
 	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { Label } from '$lib/components/ui/label'; // ✅ Added Label
-	import { Skeleton } from '$lib/components/ui/skeleton'; // ✅ Added Skeleton
+	import { Label } from '$lib/components/ui/label';
+	import { Skeleton } from '$lib/components/ui/skeleton';
 	import {
 		Tooltip,
 		TooltipContent,
@@ -36,6 +36,12 @@
 		DropdownMenuSeparator,
 		DropdownMenuTrigger
 	} from '$lib/components/ui/dropdown-menu';
+	import {
+		Accordion,
+		AccordionContent,
+		AccordionItem,
+		AccordionTrigger
+	} from '$lib/components/ui/accordion';
 	// Lucide Icons
 	import {
 		FileText,
@@ -71,7 +77,7 @@
 		user: string;
 		user_id: number;
 		pageCount?: number;
-		print_mode?: 'single-sided' | 'double-sided'; // Optional to match API
+		print_mode?: 'single-sided' | 'double-sided';
 		isMerged?: boolean;
 		mergedFrom?: string[];
 		hidden?: boolean;
@@ -83,6 +89,7 @@
 
 	let queue = $state<QueueItem[]>([]);
 	let groupedQueue = $state<Record<string, QueueItem[]>>({});
+	let finishedQueues = $state<Record<string, QueueItem[]>>({});
 	let loading = $state(false);
 	let error = $state<string | null>(null);
 	let merging = $state<Record<string, boolean>>({});
@@ -243,7 +250,6 @@
 			mergedPdfCache.incrementRef(cacheKey);
 			blobUrl = mergedPdfCache.get(cacheKey)!;
 		} else {
-			const userItems = groupedQueue[user] || [];
 			merging = { ...merging, [user]: true };
 			mergingFiles = { ...mergingFiles };
 			for (const f of simplexFiles) mergingFiles[f] = true;
@@ -386,7 +392,14 @@
 			try {
 				loading = true;
 				const { data, error } = await client.GET('/api/admin/queue/', {
-					headers: { Authorization: `Bearer ${token.value}` }
+					headers: {
+						Authorization: `Bearer ${token.value}`
+					},
+					params: {
+						query: {
+							include_processed: true
+						}
+					}
 				});
 				if (error) throw new Error('Failed to fetch queue');
 				queue = (data.queue || []).map((item: any) => ({
@@ -412,7 +425,6 @@
 		fetchQueue();
 	});
 
-	// ✅ FIXED: Type assertion to resolve all destructuring errors
 	$effect(() => {
 		const entries = Object.entries(groupedQueue) as [string, QueueItem[]][];
 		for (const [user, items] of entries) {
@@ -689,13 +701,16 @@
 		}
 	}
 
-	// ✅ Clear only when ALL non-hidden items are processed
 	function canClearQueue(user: string): boolean {
 		const items = groupedQueue[user] || [];
 		return items.every((item) => item.processed || item.hidden);
 	}
 
 	function clearUserQueue(user: string) {
+		const itemsToArchive = groupedQueue[user] || [];
+		if (itemsToArchive.length > 0) {
+			finishedQueues = { ...finishedQueues, [user]: [...itemsToArchive] };
+		}
 		const { [user]: _, ...rest } = groupedQueue;
 		groupedQueue = rest;
 		const { [user]: __, ...restSel } = selectedItems;
@@ -736,7 +751,6 @@
 					}
 				}}
 			/>
-			<!-- ✅ Using <Label> from shadcn-svelte -->
 			<Label for="dont-remind" class="text-sm text-muted-foreground">
 				Don’t show this again for {printModeChangeDialog?.item.user} (until refresh)
 			</Label>
@@ -819,7 +833,6 @@
 			<Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>
 		{/if}
 		{#if loading}
-			<!-- ✅ Skeleton loading UI -->
 			<div class="space-y-8">
 				{#each Array(3) as _, i}
 					<div class="overflow-hidden rounded-lg border">
@@ -857,7 +870,7 @@
 					</div>
 				{/each}
 			</div>
-		{:else if Object.keys(groupedQueue).length === 0}
+		{:else if Object.keys(groupedQueue).length === 0 && Object.keys(finishedQueues).length === 0}
 			<div class="py-12 text-center">
 				<FileText class="mx-auto h-12 w-12 text-muted-foreground" />
 				<h3 class="mt-2 text-lg font-medium">No items in queue</h3>
@@ -865,87 +878,82 @@
 		{:else}
 			<div class="space-y-8">
 				{#each Object.entries(groupedQueue) as [user, items]}
-					<div class="overflow-hidden rounded-lg border">
-						<div class="flex flex-wrap items-center justify-between gap-4 bg-muted/50 px-6 py-4">
-							<div>
-								<h2 class="text-xl font-semibold">
-									{user}
-									<span class="ml-2 text-sm font-normal text-muted-foreground">
-										({userPageTotals[user]}
-										{userPageTotals[user] === 1 ? 'page' : 'pages'})
-									</span>
-								</h2>
-							</div>
-							<div class="flex flex-wrap gap-2">
-								{#if items.filter((i) => !i.hidden && !i.isMerged).length >= 2}
-									{#if selectedItems[user] && Object.values(selectedItems[user]).filter(Boolean).length >= 2}
-										<Button
-											variant="default"
-											size="sm"
-											disabled={merging[user] ||
-												mergingAllForUser[user] ||
-												Object.values(mergingFiles).some((v) => v)}
-											onclick={() => mergePdfsBackend(user)}
-										>
-											{#if merging[user] || mergingAllForUser[user]}
-												<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Merging...
+					{@const visibleItems = items.filter((item) => !item.hidden)}
+					{#if visibleItems.length > 0}
+						<div class="mb-6 overflow-hidden rounded-lg border">
+							<div class="flex flex-wrap items-center justify-between gap-4 bg-muted/50 px-6 py-4">
+								<div>
+									<h2 class="text-xl font-semibold">
+										{user}
+										<span class="ml-2 text-sm font-normal text-muted-foreground">
+											({userPageTotals[user]}
+											{userPageTotals[user] === 1 ? 'page' : 'pages'})
+										</span>
+									</h2>
+								</div>
+								<div class="flex flex-wrap gap-2">
+									{#if visibleItems.filter((i) => !i.isMerged && !i.processed).length >= 2}
+										{#if selectedItems[user] && Object.values(selectedItems[user]).filter(Boolean).length >= 2}
+											<Button
+												variant="default"
+												size="sm"
+												disabled={merging[user] ||
+													mergingAllForUser[user] ||
+													Object.values(mergingFiles).some((v) => v)}
+												onclick={() => mergePdfsBackend(user)}
+											>
+												{#if merging[user] || mergingAllForUser[user]}
+													<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Merging...
+												{:else}
+													<Merge class="mr-2 h-4 w-4" /> Merge Selected
+												{/if}
+											</Button>
+										{:else}
+											<Button
+												variant="default"
+												size="sm"
+												disabled={merging[user] ||
+													mergingAllForUser[user] ||
+													Object.values(mergingFiles).some((v) => v)}
+												onclick={() => mergeAllForUserBackend(user)}
+											>
+												{#if merging[user] || mergingAllForUser[user]}
+													<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Merging...
+												{:else}
+													<Merge class="mr-2 h-4 w-4" /> Merge All
+												{/if}
+											</Button>
+										{/if}
+									{/if}
+									{#if userSelectionState[user]?.hasUnconfirmed}
+										<Button variant="outline" size="sm" onclick={() => confirmSelectedItems(user)}>
+											{#if confirmingSelected[user]}
+												<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Confirming...
 											{:else}
-												<Merge class="mr-2 h-4 w-4" /> Merge Selected
-											{/if}
-										</Button>
-									{:else}
-										<Button
-											variant="default"
-											size="sm"
-											disabled={merging[user] ||
-												mergingAllForUser[user] ||
-												Object.values(mergingFiles).some((v) => v)}
-											onclick={() => mergeAllForUserBackend(user)}
-										>
-											{#if merging[user] || mergingAllForUser[user]}
-												<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Merging...
-											{:else}
-												<Merge class="mr-2 h-4 w-4" /> Merge All
+												<CircleCheckBig class="mr-2 h-4 w-4" /> Confirm Selected
 											{/if}
 										</Button>
 									{/if}
-								{/if}
-
-								{#if userSelectionState[user]?.hasUnconfirmed}
-									<Button variant="outline" size="sm" onclick={() => confirmSelectedItems(user)}>
-										{#if confirmingSelected[user]}
-											<LoaderCircle class="mr-2 h-4 w-4 animate-spin" /> Confirming...
-										{:else}
-											<CircleCheckBig class="mr-2 h-4 w-4" /> Confirm Selected
-										{/if}
-									</Button>
-								{:else if userSelectionState[user]?.hasConfirmed}
-									<Button variant="outline" size="sm" onclick={() => unconfirmSelectedItems(user)}>
-										<X class="mr-2 h-4 w-4" /> Unconfirm Selected
-									</Button>
-								{/if}
-
-								{#if canClearQueue(user)}
-									<Button variant="destructive" size="sm" onclick={() => clearUserQueue(user)}>
-										Clear Queue
-									</Button>
-								{/if}
+									{#if canClearQueue(user)}
+										<Button variant="destructive" size="sm" onclick={() => clearUserQueue(user)}>
+											Clear Queue
+										</Button>
+									{/if}
+								</div>
 							</div>
-						</div>
-						<Table>
-							<TableHeader>
-								<TableRow>
-									<TableHead class="w-12"></TableHead>
-									<TableHead>File</TableHead>
-									<TableHead>Status</TableHead>
-									<TableHead>Created</TableHead>
-									<TableHead>Print Mode</TableHead>
-									<TableHead class="text-right">Actions</TableHead>
-								</TableRow>
-							</TableHeader>
-							<TableBody>
-								{#each items as item}
-									{#if !item.hidden}
+							<Table>
+								<TableHeader>
+									<TableRow>
+										<TableHead class="w-12"></TableHead>
+										<TableHead>File</TableHead>
+										<TableHead>Status</TableHead>
+										<TableHead>Created</TableHead>
+										<TableHead>Print Mode</TableHead>
+										<TableHead class="text-right">Actions</TableHead>
+									</TableRow>
+								</TableHeader>
+								<TableBody>
+									{#each visibleItems as item}
 										<TableRow
 											class={cn(
 												'transition-opacity duration-200 ease-in-out',
@@ -954,14 +962,13 @@
 										>
 											<TableCell>
 												{#if !item.isMerged}
-													<!-- ✅ Square checkbox -->
 													<Checkbox
 														checked={!!selectedItems[item.user]?.[item.file]}
 														onCheckedChange={(checked) =>
 															toggleSelect(item.user, item.file, checked)}
 														disabled={mergingFiles[item.file] || getShouldDisable(item.user, item)}
 														class={cn(
-															'h-4 w-4 rounded-sm', // square style
+															'h-4 w-4 rounded-sm',
 															getShouldDisable(item.user, item) && 'cursor-not-allowed opacity-50'
 														)}
 													/>
@@ -1294,11 +1301,73 @@
 												{/if}
 											{/each}
 										{/if}
-									{/if}
-								{/each}
-							</TableBody>
-						</Table>
-					</div>
+									{/each}
+								</TableBody>
+							</Table>
+						</div>
+					{/if}
+				{/each}
+
+				{#each Object.entries(finishedQueues) as [user, items]}
+					<Accordion type="single" class="mb-6">
+						<AccordionItem value={`${user}-finished`}>
+							<AccordionTrigger class="px-4 py-3 hover:no-underline">
+								<span class="text-lg font-semibold">{user}’s finished queue</span>
+							</AccordionTrigger>
+							<AccordionContent class="border-t px-4 pt-4">
+								<Table>
+									<TableHeader>
+										<TableRow>
+											<TableHead>File</TableHead>
+											<TableHead>Status</TableHead>
+											<TableHead>Created</TableHead>
+											<TableHead>Print Mode</TableHead>
+										</TableRow>
+									</TableHeader>
+									<TableBody>
+										{#each items as item}
+											<TableRow class="opacity-80">
+												<TableCell class="font-medium">
+													{#if item.isMerged && item.mergedFrom}
+														<span class="inline-flex items-center gap-1.5">
+															<span>Merged PDF</span>
+															<Badge variant="outline" class="px-1.5 py-0 text-xs">
+																{item.mergedFrom.length} files
+															</Badge>
+														</span>
+													{:else}
+														{item.file.split('/').pop()}
+													{/if}
+													{#if item.pageCount !== undefined && item.pageCount >= 0}
+														<span class="ml-2 text-xs text-muted-foreground"
+															>({item.pageCount} pg)</span
+														>
+													{/if}
+												</TableCell>
+												<TableCell>
+													{#if item.isMerged}
+														<Badge variant="default">Merged</Badge>
+													{:else}
+														<Badge variant="secondary">Processed</Badge>
+													{/if}
+												</TableCell>
+												<TableCell>{new Date(item.created_at).toLocaleString()}</TableCell>
+												<TableCell>
+													{#if item.isMerged}
+														<span class="text-sm text-muted-foreground">Simplex</span>
+													{:else}
+														<span class="text-sm text-muted-foreground">
+															{itemPrintMode[item.id] === 'simplex' ? 'Simplex' : 'Duplex'}
+														</span>
+													{/if}
+												</TableCell>
+											</TableRow>
+										{/each}
+									</TableBody>
+								</Table>
+							</AccordionContent>
+						</AccordionItem>
+					</Accordion>
 				{/each}
 			</div>
 		{/if}

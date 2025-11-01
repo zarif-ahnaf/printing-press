@@ -1,9 +1,11 @@
 import io
+from io import BytesIO
 from typing import Optional
 
 import fitz
+import pypdfium2 as pdfium
 from ninja.files import UploadedFile
-from pypdf import PdfReader
+from pypdf import PdfReader, PdfWriter
 from pypdf.errors import PdfReadError
 
 
@@ -93,4 +95,55 @@ def count_pdf_pages(pdf_bytes: bytes, filename: str = "") -> int:
         return len(reader.pages)
     except (PdfReadError, ValueError, OSError, TypeError) as e:
         raise ValueError(f"Invalid or corrupted PDF: {str(e)}")
-        raise ValueError(f"Invalid or corrupted PDF: {str(e)}")
+
+
+def _is_color_page(pil_img, tolerance: int = 5) -> bool:
+    if pil_img.mode in ("L", "1"):
+        return False
+    hsv = pil_img.convert("HSV")
+    _, s, _ = hsv.split()
+    return max(s.getdata()) > tolerance
+
+
+def split_pdf_into_colored_pages(
+    pdf_bytes: bytes, dpi: int = 75, tolerance: int = 5
+) -> bytes:
+    """Return PDF with ONLY color pages (highly compressed)."""
+    src_render = pdfium.PdfDocument(pdf_bytes)
+    src_copy = PdfReader(BytesIO(pdf_bytes))
+    writer = PdfWriter()
+
+    scale = dpi / 72.0
+    for i in range(len(src_render)):
+        bitmap = src_render[i].render(scale=scale)
+        pil_img = bitmap.to_pil()
+        if _is_color_page(pil_img, tolerance):
+            writer.add_page(src_copy.pages[i])
+        src_render[i].close()
+    src_render.close()
+
+    output = BytesIO()
+    writer.write(output)
+    return output.getvalue()
+
+
+def split_pdf_into_black_and_white_pages(
+    pdf_bytes: bytes, dpi: int = 75, tolerance: int = 5
+) -> bytes:
+    """Return PDF with ONLY grayscale pages (highly compressed)."""
+    src_render = pdfium.PdfDocument(pdf_bytes)
+    src_copy = PdfReader(BytesIO(pdf_bytes))
+    writer = PdfWriter()
+
+    scale = dpi / 72.0
+    for i in range(len(src_render)):
+        bitmap = src_render[i].render(scale=scale)
+        pil_img = bitmap.to_pil()
+        if not _is_color_page(pil_img, tolerance):
+            writer.add_page(src_copy.pages[i])
+        src_render[i].close()
+    src_render.close()
+
+    output = BytesIO()
+    writer.write(output)
+    return output.getvalue()
