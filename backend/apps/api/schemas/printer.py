@@ -8,6 +8,10 @@ class PrinterCreateSchema(Schema):
     duplex_charge: float
 
 
+class PrinterUpdateSchema(PrinterCreateSchema):
+    decomissioned: bool
+
+
 class PrinterOutSchema(PrinterCreateSchema):
     id: int
     image: str | None = None

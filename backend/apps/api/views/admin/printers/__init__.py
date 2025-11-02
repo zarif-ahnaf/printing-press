@@ -7,9 +7,9 @@ from ....auth import AuthBearer
 from ....decorators import admin_required
 from ....http import HttpRequest
 from ....schemas.printer import (
-    PrinterCreateSchema,
     PrinterDecomissionSchema,
     PrinterOutSchema,
+    PrinterUpdateSchema,
 )
 
 router = Router(tags=["Admin Printers"])
@@ -20,7 +20,7 @@ router = Router(tags=["Admin Printers"])
 def printers_update(
     request: HttpRequest,
     printer_id: int,
-    payload: Form[PrinterCreateSchema],
+    payload: Form[PrinterUpdateSchema],
     image: File[UploadedFile] = None,  # type: ignore
 ):
     printer = get_object_or_404(Printers, id=printer_id)
@@ -28,6 +28,7 @@ def printers_update(
     printer.is_color = payload.is_color
     printer.simplex_charge = payload.simplex_charge
     printer.duplex_charge = payload.duplex_charge
+    printer.decomissioned = payload.decomissioned
     if image:
         printer.image = image
     printer.save()

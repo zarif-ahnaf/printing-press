@@ -20,10 +20,10 @@
 	import { Switch } from '$lib/components/ui/switch';
 	import { Label } from '$lib/components/ui/label';
 	import { client } from '$lib/client';
+	import { cn } from '$lib/utils';
 	import { token } from '$lib/stores/token.svelte';
-	import { is_admin_user } from '$lib/stores/auth.svelte';
 
-	type PrinterOutSchema = {
+	type PrinterSchema = {
 		id: number;
 		name: string;
 		is_color: boolean;
@@ -33,10 +33,10 @@
 		decomissioned: boolean;
 	};
 
-	let printer = $state<PrinterOutSchema | null>(null);
+	let printer = $state<PrinterSchema | null>(null);
 	let isLoading = $state(true);
-	let error = $state<string | null>(null);
 	let isEditing = $state(false);
+	let error = $state<string | null>(null);
 	let isSaving = $state(false);
 
 	async function fetchPrinter(id: number) {
@@ -56,7 +56,7 @@
 	}
 
 	async function savePrinter() {
-		if (!printer || !is_admin_user.value) return;
+		if (!printer) return;
 		isSaving = true;
 		error = null;
 		try {
@@ -99,7 +99,7 @@
 
 	function cancelEdit() {
 		if (printer) {
-			fetchPrinter(printer.id); // Revert by refetching
+			fetchPrinter(printer.id);
 			isEditing = false;
 		}
 	}
@@ -145,7 +145,7 @@
 			>
 				<AlertCircle class="mt-0.5 h-6 w-6 shrink-0 text-destructive" />
 				<div>
-					<h2 class="text-xl font-bold text-foreground">Error Loading Printer</h2>
+					<h2 class="text-xl font-bold text-foreground">Error</h2>
 					<p class="mt-1 text-muted-foreground">{error}</p>
 				</div>
 			</div>
@@ -153,29 +153,31 @@
 			<div
 				class="relative overflow-hidden rounded-2xl border border-border bg-card p-8 shadow-xl backdrop-blur-xl"
 			>
-				{#if printer.image}
-					<div
-						class="absolute inset-0 z-0 opacity-60"
-						style="top: 10%; left: 5%; width: 48%; height: 60%;"
-					>
-						<div
-							class="h-full w-full rounded-xl"
-							style="
-								background: linear-gradient(135deg, var(--primary)/0.4, var(--accent)/0.3);
-								filter: blur(24px);
-								transform: scale(1.1);
-							"
-						></div>
-					</div>
+				{#if printer.decomissioned}
+					<div class="absolute top-0 right-0 left-0 h-1.5 bg-destructive"></div>
 				{/if}
 
 				<div class="relative z-10">
+					{#if printer.decomissioned && isEditing}
+						<div class="mb-6 rounded-lg border border-destructive/50 bg-destructive/10 p-4">
+							<div class="flex items-start gap-3">
+								<AlertCircle class="mt-0.5 h-5 w-5 text-destructive" />
+								<div>
+									<p class="font-medium text-foreground">Printer is decommissioned.</p>
+									<p class="mt-1 text-sm text-muted-foreground">
+										Please recommission this printer before making any changes.
+									</p>
+								</div>
+							</div>
+						</div>
+					{/if}
+
 					<div class="mb-8 flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
 						<div class="flex items-center gap-4">
 							<div class="rounded-xl bg-primary/10 p-3">
 								<Printer class="h-8 w-8 text-primary" />
 							</div>
-							{#if isEditing && is_admin_user.value}
+							{#if isEditing && !printer.decomissioned}
 								<Input
 									bind:value={printer.name}
 									class="w-auto border-none bg-transparent px-0 text-2xl font-bold focus:ring-0"
@@ -189,37 +191,23 @@
 						</div>
 
 						<div class="flex items-center gap-2">
-							{#if is_admin_user.value}
-								{#if isEditing}
-									<Button variant="outline" size="sm" onclick={cancelEdit} disabled={isSaving}>
-										<X class="mr-2 h-4 w-4" /> Cancel
-									</Button>
-									<Button size="sm" onclick={savePrinter} disabled={isSaving}>
-										<Save class="mr-2 h-4 w-4" />
-										{isSaving ? 'Saving...' : 'Save'}
-									</Button>
-								{:else}
-									<Button size="sm" variant="outline" onclick={() => (isEditing = true)}>
-										<Edit3 class="mr-2 h-4 w-4" /> Edit
-									</Button>
-								{/if}
+							{#if isEditing}
+								<Button variant="outline" size="sm" onclick={cancelEdit} disabled={isSaving}>
+									<X class="mr-2 h-4 w-4" /> Cancel
+								</Button>
+								<Button size="sm" onclick={savePrinter} disabled={isSaving}>
+									<Save class="mr-2 h-4 w-4" />
+									{isSaving ? 'Saving...' : 'Save'}
+								</Button>
+							{:else if !printer.decomissioned}
+								<Button size="sm" variant="outline" onclick={() => (isEditing = true)}>
+									<Edit3 class="mr-2 h-4 w-4" /> Edit
+								</Button>
+							{:else}
+								<Button size="sm" variant="outline" disabled>
+									<Archive class="mr-2 h-4 w-4" /> Decommissioned
+								</Button>
 							{/if}
-
-							<span
-								class={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium ${
-									printer.decomissioned
-										? 'bg-destructive/20 text-destructive'
-										: 'bg-success/20 text-success'
-								}`}
-							>
-								{#if printer.decomissioned}
-									<Archive class="h-4 w-4" />
-									Decommissioned
-								{:else}
-									<CheckCircle class="h-4 w-4" />
-									Active
-								{/if}
-							</span>
 						</div>
 					</div>
 
@@ -256,7 +244,7 @@
 								<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
 									<div>
 										<Label class="text-sm text-muted-foreground">Color Support</Label>
-										{#if isEditing && is_admin_user.value}
+										{#if isEditing && !printer.decomissioned}
 											<div class="mt-2 flex items-center gap-2">
 												<Switch bind:checked={printer.is_color} />
 												<span class="text-sm text-foreground">
@@ -274,7 +262,7 @@
 									</div>
 									<div>
 										<Label class="text-sm text-muted-foreground">Status</Label>
-										{#if isEditing && is_admin_user.value}
+										{#if isEditing}
 											<div class="mt-2 flex items-center gap-2">
 												<Switch bind:checked={printer.decomissioned} />
 												<span class="text-sm text-foreground">
@@ -298,7 +286,7 @@
 								<div class="grid grid-cols-2 gap-4">
 									<div class="rounded-lg bg-primary/5 p-4">
 										<Label class="text-sm text-primary/80">Simplex (Single-sided)</Label>
-										{#if isEditing && is_admin_user.value}
+										{#if isEditing && !printer.decomissioned}
 											<Input
 												type="number"
 												step="0.01"
@@ -314,7 +302,7 @@
 									</div>
 									<div class="rounded-lg bg-primary/5 p-4">
 										<Label class="text-sm text-secondary-foreground">Duplex (Double-sided)</Label>
-										{#if isEditing && is_admin_user.value}
+										{#if isEditing && !printer.decomissioned}
 											<Input
 												type="number"
 												step="0.01"
