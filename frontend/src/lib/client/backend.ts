@@ -41,7 +41,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/printers/{printer_id}/": {
+    "/api/admin/printers/{printer_id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -110,7 +110,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/printers/arrangement/remove/{id}/": {
+    "/api/admin/printers/arrangement/remove/{id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -127,7 +127,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/admin/printers/remove/{id}/": {
+    "/api/admin/printers/remove/{id}": {
         parameters: {
             query?: never;
             header?: never;
@@ -212,7 +212,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/convert/merge/color/": {
+    "/api/convert/merge/color": {
         parameters: {
             query?: never;
             header?: never;
@@ -229,7 +229,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/convert/merge/grayscale/": {
+    "/api/convert/merge/grayscale": {
         parameters: {
             query?: never;
             header?: never;
@@ -293,6 +293,23 @@ export interface paths {
         };
         /** Printer List */
         get: operations["apps_api_views_printers_printer_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/printers/{printer_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Printer Get */
+        get: operations["apps_api_views_printers_printer_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -387,7 +404,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/split/pdf_colors/color/": {
+    "/api/split/pdf_colors/color": {
         parameters: {
             query?: never;
             header?: never;
@@ -404,7 +421,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/split/pdf_colors/grayscale/": {
+    "/api/split/pdf_colors/grayscale": {
         parameters: {
             query?: never;
             header?: never;
@@ -579,17 +596,6 @@ export interface components {
             /** Description */
             description?: string | null;
         };
-        /** PrinterCreateSchema */
-        PrinterCreateSchema: {
-            /** Name */
-            name: string;
-            /** Is Color */
-            is_color: boolean;
-            /** Simplex Charge */
-            simplex_charge?: number | null;
-            /** Duplex Charge */
-            duplex_charge?: number | null;
-        };
         /** PrinterOutSchema */
         PrinterOutSchema: {
             /** Name */
@@ -597,15 +603,26 @@ export interface components {
             /** Is Color */
             is_color: boolean;
             /** Simplex Charge */
-            simplex_charge?: number | null;
+            simplex_charge: number;
             /** Duplex Charge */
-            duplex_charge?: number | null;
+            duplex_charge: number;
             /** Id */
             id: number;
-            /** Image Url */
-            image_url?: string | null;
+            /** Image */
+            image?: string | null;
             /** Decomissioned */
             decomissioned: boolean;
+        };
+        /** PrinterCreateSchema */
+        PrinterCreateSchema: {
+            /** Name */
+            name: string;
+            /** Is Color */
+            is_color: boolean;
+            /** Simplex Charge */
+            simplex_charge: number;
+            /** Duplex Charge */
+            duplex_charge: number;
         };
         /** PrinterDecomissionSchema */
         PrinterDecomissionSchema: {
@@ -887,17 +904,32 @@ export interface operations {
     };
     apps_api_views_admin_printers_printers_update: {
         parameters: {
-            query?: {
-                image?: string | null;
-                payload?: components["schemas"]["PrinterCreateSchema"] | null;
-            };
+            query?: never;
             header?: never;
             path: {
                 printer_id: number;
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Name */
+                    name: string;
+                    /** Is Color */
+                    is_color: boolean;
+                    /** Simplex Charge */
+                    simplex_charge: number;
+                    /** Duplex Charge */
+                    duplex_charge: number;
+                    /**
+                     * Image
+                     * Format: binary
+                     */
+                    image?: string;
+                };
+            };
+        };
         responses: {
             /** @description OK */
             200: {
@@ -956,16 +988,28 @@ export interface operations {
     };
     apps_api_views_admin_printers_add_printers_add: {
         parameters: {
-            query?: {
-                image?: string | null;
-            };
+            query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["PrinterCreateSchema"];
+                "multipart/form-data": {
+                    /** Name */
+                    name: string;
+                    /** Is Color */
+                    is_color: boolean;
+                    /** Simplex Charge */
+                    simplex_charge: number;
+                    /** Duplex Charge */
+                    duplex_charge: number;
+                    /**
+                     * Image
+                     * Format: binary
+                     */
+                    image: string;
+                };
             };
         };
         responses: {
@@ -1341,6 +1385,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PrinterOutSchema"][];
+                };
+            };
+        };
+    };
+    apps_api_views_printers_printer_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                printer_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrinterOutSchema"];
                 };
             };
         };

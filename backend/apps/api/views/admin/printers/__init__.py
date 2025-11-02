@@ -21,7 +21,7 @@ def printers_update(
     request: HttpRequest,
     printer_id: int,
     payload: Form[PrinterCreateSchema],
-    image: File[UploadedFile] | None = None,
+    image: File[UploadedFile] = None,  # type: ignore
 ):
     printer = get_object_or_404(Printers, id=printer_id)
     printer.name = payload.name
@@ -31,7 +31,15 @@ def printers_update(
     if image:
         printer.image = image
     printer.save()
-    return printer
+    return PrinterOutSchema(
+        name=printer.name,
+        is_color=printer.is_color,
+        id=printer.pk,
+        simplex_charge=printer.simplex_charge,
+        duplex_charge=printer.duplex_charge,
+        decomissioned=printer.decomissioned,
+        image=request.build_absolute_uri(printer.image.url),
+    )
 
 
 @router.delete(

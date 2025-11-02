@@ -10,7 +10,7 @@ from .....schemas.printer import PrinterCreateSchema, PrinterOutSchema
 router = Router(tags=["Admin Printers"])
 
 
-@router.post("", auth=AuthBearer(), response=PrinterOutSchema)
+@router.post("/", auth=AuthBearer(), response=PrinterOutSchema)
 @admin_required
 def printers_add(
     request: HttpRequest,

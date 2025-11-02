@@ -4,8 +4,8 @@ from ninja import Schema
 class PrinterCreateSchema(Schema):
     name: str
     is_color: bool
-    simplex_charge: int
-    duplex_charge: int
+    simplex_charge: float
+    duplex_charge: float
 
 
 class PrinterOutSchema(PrinterCreateSchema):

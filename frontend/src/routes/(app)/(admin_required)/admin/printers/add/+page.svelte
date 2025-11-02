@@ -15,6 +15,7 @@
 	import { Label } from '$lib/components/ui/label';
 	import { Input } from '$lib/components/ui/input';
 	import { client } from '$lib/client';
+	import { token } from '$lib/stores/token.svelte';
 
 	let isSubmitting = $state(false);
 	let name = $state('');
@@ -35,14 +36,29 @@
 
 		try {
 			const { error } = await client.POST('/api/admin/printers/add/', {
+				headers: {
+					Authorization: `Bearer ${token.value}`
+				},
 				body: {
 					name: name.trim(),
 					is_color: Boolean(isColor),
 					simplex_charge: Number(simplexCharge),
 					duplex_charge: Number(duplexCharge),
-					image: imageFile
+					image: imageFile as any // Override type for file upload
+				},
+				bodySerializer(body: Record<string, any>) {
+					const fd = new FormData();
+					for (const [key, value] of Object.entries(body)) {
+						if (value instanceof File) {
+							fd.append(key, value);
+						} else if (value !== undefined && value !== null) {
+							fd.append(key, String(value));
+						} else {
+							fd.append(key, '');
+						}
+					}
+					return fd;
 				}
-				// Do NOT set contentType — let browser handle it
 			});
 
 			if (error) {
@@ -54,7 +70,7 @@
 			toast.success('Printer added!', {
 				description: `"${name}" is now ready for use.`
 			});
-			goto('/printers');
+			// goto('/printers');
 		} catch (err) {
 			console.error(err);
 			toast.error('Network error', {
