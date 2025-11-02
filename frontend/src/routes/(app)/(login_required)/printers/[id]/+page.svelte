@@ -1,3 +1,4 @@
+<!-- src/routes/printers/[id]/+page.svelte -->
 <script lang="ts">
 	import { page } from '$app/state';
 	import { onMount } from 'svelte';
@@ -8,10 +9,19 @@
 		Info,
 		AlertCircle,
 		CheckCircle,
-		Archive
+		Archive,
+		Edit3,
+		Save,
+		X
 	} from 'lucide-svelte';
 	import { Skeleton } from '$lib/components/ui/skeleton';
+	import { Button } from '$lib/components/ui/button';
+	import { Input } from '$lib/components/ui/input';
+	import { Switch } from '$lib/components/ui/switch';
+	import { Label } from '$lib/components/ui/label';
 	import { client } from '$lib/client';
+	import { token } from '$lib/stores/token.svelte';
+	import { is_admin_user } from '$lib/stores/auth.svelte';
 
 	type PrinterOutSchema = {
 		id: number;
@@ -23,27 +33,74 @@
 		decomissioned: boolean;
 	};
 
-	let printer: PrinterOutSchema | null = null;
-	let isLoading = true;
-	let error: string | null = null;
+	let printer = $state<PrinterOutSchema | null>(null);
+	let isLoading = $state(true);
+	let error = $state<string | null>(null);
+	let isEditing = $state(false);
+	let isSaving = $state(false);
 
 	async function fetchPrinter(id: number) {
+		isLoading = true;
+		error = null;
 		try {
-			const { data, error } = await client.GET('/api/printers/{printer_id}', {
-				params: {
-					path: {
-						printer_id: id
-					}
-				},
-				headers: { 'Content-Type': 'application/json' }
+			const { data, error: fetchError } = await client.GET('/api/printers/{printer_id}', {
+				params: { path: { printer_id: id } }
 			});
-
-			if (error) throw new Error(error);
+			if (fetchError) throw new Error(fetchError);
 			printer = data;
 		} catch (err) {
 			error = err instanceof Error ? err.message : 'Unknown error';
 		} finally {
 			isLoading = false;
+		}
+	}
+
+	async function savePrinter() {
+		if (!printer || !is_admin_user.value) return;
+		isSaving = true;
+		error = null;
+		try {
+			const { data, error: saveError } = await client.PATCH('/api/admin/printers/{printer_id}', {
+				headers: {
+					Authorization: `Bearer ${token.value}`
+				},
+				params: { path: { printer_id: printer.id } },
+				body: {
+					name: printer.name,
+					is_color: printer.is_color,
+					simplex_charge: printer.simplex_charge,
+					duplex_charge: printer.duplex_charge,
+					decomissioned: printer.decomissioned,
+					image: printer.image as any
+				},
+				bodySerializer(body: Record<string, any>) {
+					const fd = new FormData();
+					for (const [key, value] of Object.entries(body)) {
+						if (value instanceof File) {
+							fd.append(key, value);
+						} else if (value !== undefined && value !== null) {
+							fd.append(key, String(value));
+						} else {
+							fd.append(key, '');
+						}
+					}
+					return fd;
+				}
+			});
+			if (saveError) throw new Error(saveError);
+			printer = data;
+			isEditing = false;
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to save changes';
+		} finally {
+			isSaving = false;
+		}
+	}
+
+	function cancelEdit() {
+		if (printer) {
+			fetchPrinter(printer.id); // Revert by refetching
+			isEditing = false;
 		}
 	}
 
@@ -62,7 +119,6 @@
 	<div class="mx-auto max-w-5xl">
 		{#if isLoading}
 			<div class="space-y-8">
-				<!-- Header skeleton -->
 				<div class="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
 					<div class="flex items-center gap-4">
 						<Skeleton class="h-12 w-12 rounded-xl" />
@@ -73,19 +129,12 @@
 					</div>
 					<Skeleton class="h-7 w-32 rounded-full" />
 				</div>
-
-				<!-- Main content grid skeleton -->
 				<div class="grid grid-cols-1 gap-8 lg:grid-cols-3">
-					<!-- Image area -->
 					<div class="lg:col-span-1">
 						<Skeleton class="aspect-4/5 w-full rounded-xl" />
 					</div>
-
-					<!-- Details area -->
 					<div class="space-y-6 lg:col-span-2">
-						<!-- Specs card -->
 						<Skeleton class="h-32 w-full rounded-xl" />
-						<!-- Pricing card -->
 						<Skeleton class="h-32 w-full rounded-xl" />
 					</div>
 				</div>
@@ -104,7 +153,6 @@
 			<div
 				class="relative overflow-hidden rounded-2xl border border-border bg-card p-8 shadow-xl backdrop-blur-xl"
 			>
-				<!-- Glow behind printer image only -->
 				{#if printer.image}
 					<div
 						class="absolute inset-0 z-0 opacity-60"
@@ -127,31 +175,55 @@
 							<div class="rounded-xl bg-primary/10 p-3">
 								<Printer class="h-8 w-8 text-primary" />
 							</div>
-							<div>
-								<h1 class="text-3xl font-bold text-foreground">{printer.name}</h1>
-								<p class="text-muted-foreground">ID: #{printer.id}</p>
-							</div>
+							{#if isEditing && is_admin_user.value}
+								<Input
+									bind:value={printer.name}
+									class="w-auto border-none bg-transparent px-0 text-2xl font-bold focus:ring-0"
+								/>
+							{:else}
+								<div>
+									<h1 class="text-3xl font-bold text-foreground">{printer.name}</h1>
+									<p class="text-muted-foreground">ID: #{printer.id}</p>
+								</div>
+							{/if}
 						</div>
 
-						<span
-							class={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium ${
-								printer.decomissioned
-									? 'bg-destructive/20 text-destructive'
-									: 'bg-success/20 text-success'
-							}`}
-						>
-							{#if printer.decomissioned}
-								<Archive class="h-4 w-4" />
-								Decommissioned
-							{:else}
-								<CheckCircle class="h-4 w-4" />
-								Active
+						<div class="flex items-center gap-2">
+							{#if is_admin_user.value}
+								{#if isEditing}
+									<Button variant="outline" size="sm" onclick={cancelEdit} disabled={isSaving}>
+										<X class="mr-2 h-4 w-4" /> Cancel
+									</Button>
+									<Button size="sm" onclick={savePrinter} disabled={isSaving}>
+										<Save class="mr-2 h-4 w-4" />
+										{isSaving ? 'Saving...' : 'Save'}
+									</Button>
+								{:else}
+									<Button size="sm" variant="outline" onclick={() => (isEditing = true)}>
+										<Edit3 class="mr-2 h-4 w-4" /> Edit
+									</Button>
+								{/if}
 							{/if}
-						</span>
+
+							<span
+								class={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-sm font-medium ${
+									printer.decomissioned
+										? 'bg-destructive/20 text-destructive'
+										: 'bg-success/20 text-success'
+								}`}
+							>
+								{#if printer.decomissioned}
+									<Archive class="h-4 w-4" />
+									Decommissioned
+								{:else}
+									<CheckCircle class="h-4 w-4" />
+									Active
+								{/if}
+							</span>
+						</div>
 					</div>
 
 					<div class="grid grid-cols-1 gap-8 lg:grid-cols-3">
-						<!-- Image / Placeholder -->
 						<div class="lg:col-span-1">
 							{#if printer.image}
 								<div
@@ -163,7 +235,6 @@
 										class="h-full w-full object-cover"
 										loading="lazy"
 									/>
-									<!-- Subtle inner glow overlay -->
 									<div
 										class="absolute inset-0 rounded-xl opacity-0 transition-opacity group-hover:opacity-30"
 										style="background: radial-gradient(circle, var(--primary)/0.6, transparent 70%);"
@@ -176,7 +247,6 @@
 							{/if}
 						</div>
 
-						<!-- Details -->
 						<div class="space-y-6 lg:col-span-2">
 							<div class="rounded-xl bg-muted/50 p-6">
 								<div class="mb-4 flex items-center gap-2">
@@ -185,19 +255,37 @@
 								</div>
 								<div class="grid grid-cols-1 gap-4 md:grid-cols-2">
 									<div>
-										<p class="text-sm text-muted-foreground">Color Support</p>
-										<div class="mt-1 flex items-center gap-2">
-											<Palette class="h-4 w-4 text-accent-foreground" />
-											<span class="font-medium text-foreground">
-												{printer.is_color ? 'Full Color' : 'Grayscale Only'}
-											</span>
-										</div>
+										<Label class="text-sm text-muted-foreground">Color Support</Label>
+										{#if isEditing && is_admin_user.value}
+											<div class="mt-2 flex items-center gap-2">
+												<Switch bind:checked={printer.is_color} />
+												<span class="text-sm text-foreground">
+													{printer.is_color ? 'Full Color' : 'Grayscale Only'}
+												</span>
+											</div>
+										{:else}
+											<div class="mt-1 flex items-center gap-2">
+												<Palette class="h-4 w-4 text-accent-foreground" />
+												<span class="font-medium text-foreground">
+													{printer.is_color ? 'Full Color' : 'Grayscale Only'}
+												</span>
+											</div>
+										{/if}
 									</div>
 									<div>
-										<p class="text-sm text-muted-foreground">Status</p>
-										<span class="font-medium text-foreground">
-											{printer.decomissioned ? 'Decommissioned' : 'Operational'}
-										</span>
+										<Label class="text-sm text-muted-foreground">Status</Label>
+										{#if isEditing && is_admin_user.value}
+											<div class="mt-2 flex items-center gap-2">
+												<Switch bind:checked={printer.decomissioned} />
+												<span class="text-sm text-foreground">
+													{!printer.decomissioned ? 'Operational' : 'Decommissioned'}
+												</span>
+											</div>
+										{:else}
+											<span class="font-medium text-foreground">
+												{printer.decomissioned ? 'Decommissioned' : 'Operational'}
+											</span>
+										{/if}
 									</div>
 								</div>
 							</div>
@@ -209,16 +297,36 @@
 								</div>
 								<div class="grid grid-cols-2 gap-4">
 									<div class="rounded-lg bg-primary/5 p-4">
-										<p class="text-sm text-primary/80">Simplex (Single-sided)</p>
-										<p class="mt-1 text-xl font-bold text-foreground">
-											{printer.simplex_charge.toFixed(2)} BDT
-										</p>
+										<Label class="text-sm text-primary/80">Simplex (Single-sided)</Label>
+										{#if isEditing && is_admin_user.value}
+											<Input
+												type="number"
+												step="0.01"
+												min="0"
+												bind:value={printer.simplex_charge}
+												class="mt-1 w-full"
+											/>
+										{:else}
+											<p class="mt-1 text-xl font-bold text-foreground">
+												{printer.simplex_charge.toFixed(2)} BDT
+											</p>
+										{/if}
 									</div>
 									<div class="rounded-lg bg-primary/5 p-4">
-										<p class="text-sm text-secondary-foreground">Duplex (Double-sided)</p>
-										<p class="mt-1 text-xl font-bold text-foreground">
-											{printer.duplex_charge.toFixed(2)} BDT
-										</p>
+										<Label class="text-sm text-secondary-foreground">Duplex (Double-sided)</Label>
+										{#if isEditing && is_admin_user.value}
+											<Input
+												type="number"
+												step="0.01"
+												min="0"
+												bind:value={printer.duplex_charge}
+												class="mt-1 w-full"
+											/>
+										{:else}
+											<p class="mt-1 text-xl font-bold text-foreground">
+												{printer.duplex_charge.toFixed(2)} BDT
+											</p>
+										{/if}
 									</div>
 								</div>
 							</div>
