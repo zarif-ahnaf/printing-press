@@ -35,7 +35,7 @@
 		isSubmitting = true;
 
 		try {
-			const { error } = await client.POST('/api/admin/printers/add/', {
+			const { data, error } = await client.POST('/api/admin/printers/add/', {
 				headers: {
 					Authorization: `Bearer ${token.value}`
 				},
@@ -70,7 +70,7 @@
 			toast.success('Printer added!', {
 				description: `"${name}" is now ready for use.`
 			});
-			// goto('/printers');
+			goto(`./${data.id}`);
 		} catch (err) {
 			console.error(err);
 			toast.error('Network error', {

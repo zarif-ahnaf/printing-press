@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { CreditCard, Plus, Minus, List, Search, User, AlertCircle, X } from 'lucide-svelte';
+	import { CreditCard, Plus, Minus, List, Search, User, CircleAlert, X } from 'lucide-svelte';
 	import { token } from '$lib/stores/token.svelte';
 	import { toast } from 'svelte-sonner';
 
@@ -428,7 +428,7 @@
 		<!-- Error Alert -->
 		{#if error}
 			<Alert variant="destructive" class="mb-4">
-				<AlertCircle class="h-4 w-4" />
+				<CircleAlert class="h-4 w-4" />
 				<AlertTitle>Error</AlertTitle>
 				<AlertDescription>{error}</AlertDescription>
 			</Alert>

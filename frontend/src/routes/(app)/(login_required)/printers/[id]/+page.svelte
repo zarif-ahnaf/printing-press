@@ -7,10 +7,9 @@
 		Palette,
 		DollarSign,
 		Info,
-		AlertCircle,
-		CheckCircle,
+		CircleAlert,
 		Archive,
-		Edit3,
+		PenLine,
 		Save,
 		X
 	} from 'lucide-svelte';
@@ -20,7 +19,6 @@
 	import { Switch } from '$lib/components/ui/switch';
 	import { Label } from '$lib/components/ui/label';
 	import { client } from '$lib/client';
-	import { cn } from '$lib/utils';
 	import { token } from '$lib/stores/token.svelte';
 
 	type PrinterSchema = {
@@ -143,7 +141,7 @@
 			<div
 				class="flex items-start gap-4 rounded-xl border border-destructive/50 bg-destructive/10 p-6"
 			>
-				<AlertCircle class="mt-0.5 h-6 w-6 shrink-0 text-destructive" />
+				<CircleAlert class="mt-0.5 h-6 w-6 shrink-0 text-destructive" />
 				<div>
 					<h2 class="text-xl font-bold text-foreground">Error</h2>
 					<p class="mt-1 text-muted-foreground">{error}</p>
@@ -161,7 +159,7 @@
 					{#if printer.decomissioned && isEditing}
 						<div class="mb-6 rounded-lg border border-destructive/50 bg-destructive/10 p-4">
 							<div class="flex items-start gap-3">
-								<AlertCircle class="mt-0.5 h-5 w-5 text-destructive" />
+								<CircleAlert class="mt-0.5 h-5 w-5 text-destructive" />
 								<div>
 									<p class="font-medium text-foreground">Printer is decommissioned.</p>
 									<p class="mt-1 text-sm text-muted-foreground">
@@ -201,7 +199,7 @@
 								</Button>
 							{:else if !printer.decomissioned}
 								<Button size="sm" variant="outline" onclick={() => (isEditing = true)}>
-									<Edit3 class="mr-2 h-4 w-4" /> Edit
+									<PenLine class="mr-2 h-4 w-4" /> Edit
 								</Button>
 							{:else}
 								<Button size="sm" variant="outline" disabled>
