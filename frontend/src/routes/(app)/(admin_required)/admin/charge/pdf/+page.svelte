@@ -17,7 +17,8 @@
 		CircleCheck,
 		X,
 		ArrowRight,
-		Settings2
+		Settings2,
+		User
 	} from 'lucide-svelte';
 	import { client } from '$lib/client';
 	import { token } from '$lib/stores/token.svelte';
@@ -82,6 +83,7 @@
 	let isDragging: boolean = $state(false);
 	let printMode: 'single-sided' | 'double-sided' = $state('single-sided');
 	let isArrangementModalOpen: boolean = $state(false); // Modal state
+	let isUserModalOpen: boolean = $state(false); // User modal state
 
 	// Helper function to get auth headers
 	function getAuthHeaders(): Record<string, string> {
@@ -428,6 +430,20 @@
 	function selectArrangement(arrangement: PrinterArrangement) {
 		selectedArrangement = arrangement;
 	}
+
+	// Helper function to check if both printers in an arrangement are the same
+	function isSamePrinter(arrangement: PrinterArrangement): boolean {
+		return (
+			arrangement.color_printer !== null &&
+			arrangement.bw_printer !== null &&
+			arrangement.color_printer === arrangement.bw_printer
+		);
+	}
+
+	// Handle user selection in modal
+	function selectUser(user: User) {
+		selectedUser = user;
+	}
 </script>
 
 <!-- Global drag and drop overlay/modal -->
@@ -455,7 +471,7 @@
 		>
 			<Card.Root class="m-2 flex h-full flex-col sm:h-auto sm:rounded-xl">
 				<Card.Header
-					class="sticky top-0 z-10 border-b bg-background/95 p-4 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+					class="sticky top-0 z-10 border-b bg-background/95 p-4 backdrop-blur supports-backdrop-filter:bg-background/60"
 				>
 					<div class="flex items-center justify-between">
 						<Card.Title class="text-lg font-semibold">Select Printer Arrangement</Card.Title>
@@ -484,8 +500,10 @@
 						</div>
 					{:else}
 						<div class="space-y-6">
-							{#each arrangements as arrangement}
+							{#each arrangements as arrangement (arrangement.id)}
 								<div
+									role="button"
+									tabindex="0"
 									class="rounded-lg border p-4 transition-all duration-200 hover:shadow-md {selectedArrangement?.id ===
 									arrangement.id
 										? 'border-primary bg-primary/10 shadow-md ring-2 ring-primary/20'
@@ -504,6 +522,18 @@
 											selectedArrangement = null;
 										}
 									}}
+									onkeydown={(e) => {
+										if (e.key === 'Enter' || e.key === ' ') {
+											e.preventDefault();
+											if (selectedArrangement?.id === arrangement.id) {
+												// Double-click to unselect (using space/enter)
+												selectedArrangement = null;
+											} else {
+												// Single-click to select (using space/enter)
+												selectedArrangement = arrangement;
+											}
+										}
+									}}
 								>
 									<!-- Arrangement Header -->
 									<div class="mb-4 flex items-center justify-between">
@@ -515,98 +545,167 @@
 										{/if}
 									</div>
 
-									<!-- B/W Printer Section -->
-									<div class="mb-5">
-										<div class="mb-2 flex items-center">
-											<!-- Actual Printer Image -->
-											{#if arrangement.bw_printer_object?.image}
-												<img
-													src={arrangement.bw_printer_object.image}
-													alt="B/W Printer"
-													class="mr-3 h-10 w-10 rounded-md object-cover"
-												/>
-											{:else}
-												<!-- Fallback icon if no image -->
-												<div
-													class="mr-3 flex h-10 w-10 items-center justify-center rounded-md bg-blue-500"
-												>
-													<Printer class="h-5 w-5 text-white" />
+									<!-- Combined Printer Section if both printers are the same -->
+									{#if isSamePrinter(arrangement)}
+										<div class="mb-5">
+											<div class="mb-2 flex items-center">
+												<!-- Actual Printer Image -->
+												{#if arrangement.bw_printer_object?.image}
+													<img
+														src={arrangement.bw_printer_object.image}
+														alt="Shared Printer"
+														class="mr-3 h-10 w-10 rounded-md object-cover"
+													/>
+												{:else}
+													<!-- Fallback icon if no image -->
+													<div
+														class="mr-3 flex h-10 w-10 items-center justify-center rounded-md bg-gray-500"
+													>
+														<Printer class="h-5 w-5 text-white" />
+													</div>
+												{/if}
+												<div class="flex-1">
+													<p class="font-medium">
+														{arrangement.bw_printer_object?.name || 'Not assigned'}
+														{#if arrangement.bw_printer_object?.decomissioned}
+															<span class="ml-1 text-xs text-destructive">(Decommissioned)</span>
+														{/if}
+													</p>
+													<span
+														class="inline-flex items-center rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-800"
+													>
+														Shared B/W & Color
+													</span>
 												</div>
-											{/if}
-											<div class="flex-1">
-												<p class="font-medium">
-													{arrangement.bw_printer_object?.name || 'Not assigned'}
-													{#if arrangement.bw_printer_object?.decomissioned}
-														<span class="ml-1 text-xs text-destructive">(Decommissioned)</span>
-													{/if}
-												</p>
 											</div>
-										</div>
 
-										<!-- Pricing Lines -->
-										<div class="ml-14 space-y-1">
-											<div class="flex items-center justify-between">
-												<span class="text-muted-foreground">Simplex Charge:</span>
-												<span class="font-medium"
-													>৳{arrangement.bw_printer_object?.simplex_charge.toFixed(2) ||
-														'N/A'}</span
-												>
-											</div>
-											<div class="flex items-center justify-between">
-												<span class="text-muted-foreground">Duplex Charge:</span>
-												<span class="font-medium"
-													>৳{arrangement.bw_printer_object?.duplex_charge.toFixed(2) || 'N/A'}</span
-												>
-											</div>
-										</div>
-									</div>
-
-									<!-- Color Printer Section -->
-									<div>
-										<div class="mb-2 flex items-center">
-											<!-- Actual Printer Image -->
-											{#if arrangement.color_printer_object?.image}
-												<img
-													src={arrangement.color_printer_object.image}
-													alt="Color Printer"
-													class="mr-3 h-10 w-10 rounded-md object-cover"
-												/>
-											{:else}
-												<!-- Fallback icon if no image -->
-												<div
-													class="mr-3 flex h-10 w-10 items-center justify-center rounded-md bg-purple-500"
-												>
-													<Printer class="h-5 w-5 text-white" />
+											<!-- Pricing Lines -->
+											<div class="ml-14 space-y-1">
+												<div class="flex items-center justify-between">
+													<span class="text-muted-foreground">Simplex Charge (B/W):</span>
+													<span class="font-medium"
+														>৳{arrangement.bw_printer_object?.simplex_charge.toFixed(2) ||
+															'N/A'}</span
+													>
 												</div>
-											{/if}
-											<div class="flex-1">
-												<p class="font-medium">
-													{arrangement.color_printer_object?.name || 'Not assigned'}
-													{#if arrangement.color_printer_object?.decomissioned}
-														<span class="ml-1 text-xs text-destructive">(Decommissioned)</span>
-													{/if}
-												</p>
+												<div class="flex items-center justify-between">
+													<span class="text-muted-foreground">Duplex Charge (B/W):</span>
+													<span class="font-medium"
+														>৳{arrangement.bw_printer_object?.duplex_charge.toFixed(2) ||
+															'N/A'}</span
+													>
+												</div>
+												<div class="flex items-center justify-between">
+													<span class="text-muted-foreground">Simplex Charge (Color):</span>
+													<span class="font-medium"
+														>৳{arrangement.color_printer_object?.simplex_charge.toFixed(2) ||
+															'N/A'}</span
+													>
+												</div>
+												<div class="flex items-center justify-between">
+													<span class="text-muted-foreground">Duplex Charge (Color):</span>
+													<span class="font-medium"
+														>৳{arrangement.color_printer_object?.duplex_charge.toFixed(2) ||
+															'N/A'}</span
+													>
+												</div>
+											</div>
+										</div>
+									{:else}
+										<!-- Separate B/W Printer Section -->
+										<div class="mb-5">
+											<div class="mb-2 flex items-center">
+												<!-- Actual Printer Image -->
+												{#if arrangement.bw_printer_object?.image}
+													<img
+														src={arrangement.bw_printer_object.image}
+														alt="B/W Printer"
+														class="mr-3 h-10 w-10 rounded-md object-cover"
+													/>
+												{:else}
+													<!-- Fallback icon if no image -->
+													<div
+														class="mr-3 flex h-10 w-10 items-center justify-center rounded-md bg-blue-500"
+													>
+														<Printer class="h-5 w-5 text-white" />
+													</div>
+												{/if}
+												<div class="flex-1">
+													<p class="font-medium">
+														{arrangement.bw_printer_object?.name || 'Not assigned'}
+														{#if arrangement.bw_printer_object?.decomissioned}
+															<span class="ml-1 text-xs text-destructive">(Decommissioned)</span>
+														{/if}
+													</p>
+												</div>
+											</div>
+
+											<!-- Pricing Lines -->
+											<div class="ml-14 space-y-1">
+												<div class="flex items-center justify-between">
+													<span class="text-muted-foreground">Simplex Charge:</span>
+													<span class="font-medium"
+														>৳{arrangement.bw_printer_object?.simplex_charge.toFixed(2) ||
+															'N/A'}</span
+													>
+												</div>
+												<div class="flex items-center justify-between">
+													<span class="text-muted-foreground">Duplex Charge:</span>
+													<span class="font-medium"
+														>৳{arrangement.bw_printer_object?.duplex_charge.toFixed(2) ||
+															'N/A'}</span
+													>
+												</div>
 											</div>
 										</div>
 
-										<!-- Pricing Lines -->
-										<div class="ml-14 space-y-1">
-											<div class="flex items-center justify-between">
-												<span class="text-muted-foreground">Simplex Charge:</span>
-												<span class="font-medium"
-													>৳{arrangement.color_printer_object?.simplex_charge.toFixed(2) ||
-														'N/A'}</span
-												>
+										<!-- Separate Color Printer Section -->
+										<div>
+											<div class="mb-2 flex items-center">
+												<!-- Actual Printer Image -->
+												{#if arrangement.color_printer_object?.image}
+													<img
+														src={arrangement.color_printer_object.image}
+														alt="Color Printer"
+														class="mr-3 h-10 w-10 rounded-md object-cover"
+													/>
+												{:else}
+													<!-- Fallback icon if no image -->
+													<div
+														class="mr-3 flex h-10 w-10 items-center justify-center rounded-md bg-purple-500"
+													>
+														<Printer class="h-5 w-5 text-white" />
+													</div>
+												{/if}
+												<div class="flex-1">
+													<p class="font-medium">
+														{arrangement.color_printer_object?.name || 'Not assigned'}
+														{#if arrangement.color_printer_object?.decomissioned}
+															<span class="ml-1 text-xs text-destructive">(Decommissioned)</span>
+														{/if}
+													</p>
+												</div>
 											</div>
-											<div class="flex items-center justify-between">
-												<span class="text-muted-foreground">Duplex Charge:</span>
-												<span class="font-medium"
-													>৳{arrangement.color_printer_object?.duplex_charge.toFixed(2) ||
-														'N/A'}</span
-												>
+
+											<!-- Pricing Lines -->
+											<div class="ml-14 space-y-1">
+												<div class="flex items-center justify-between">
+													<span class="text-muted-foreground">Simplex Charge:</span>
+													<span class="font-medium"
+														>৳{arrangement.color_printer_object?.simplex_charge.toFixed(2) ||
+															'N/A'}</span
+													>
+												</div>
+												<div class="flex items-center justify-between">
+													<span class="text-muted-foreground">Duplex Charge:</span>
+													<span class="font-medium"
+														>৳{arrangement.color_printer_object?.duplex_charge.toFixed(2) ||
+															'N/A'}</span
+													>
+												</div>
 											</div>
 										</div>
-									</div>
+									{/if}
 								</div>
 							{/each}
 						</div>
@@ -614,7 +713,7 @@
 				</Card.Content>
 
 				<Card.Footer
-					class="sticky bottom-0 z-10 border-t bg-background/95 p-4 backdrop-blur supports-[backdrop-filter]:bg-background/60"
+					class="sticky bottom-0 z-10 border-t bg-background/95 p-4 backdrop-blur supports-backdrop-filter:bg-background/60"
 				>
 					<Button
 						class="w-full"
@@ -639,6 +738,128 @@
 		</Dialog.Content>
 	</Dialog.Portal>
 </Dialog.Root>
+
+<!-- User Selection Modal -->
+<Dialog.Root open={isUserModalOpen} onOpenChange={(open) => (isUserModalOpen = open)}>
+	<Dialog.Trigger class="hidden" />
+
+	<Dialog.Portal>
+		<Dialog.Overlay class="fixed inset-0 z-40 animate-in bg-black/50 backdrop-blur-sm fade-in" />
+
+		<Dialog.Content
+			class="fixed inset-0 z-50 animate-in bg-background sm:inset-auto sm:top-1/2 sm:left-1/2 sm:w-full sm:max-w-md sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:border sm:shadow-lg"
+		>
+			<Card.Root class="m-2 flex h-full flex-col sm:h-auto sm:rounded-xl">
+				<Card.Header
+					class="sticky top-0 z-10 border-b bg-background/95 p-4 backdrop-blur supports-backdrop-filter:bg-background/60"
+				>
+					<div class="flex items-center justify-between">
+						<Card.Title class="text-lg font-semibold">Select User</Card.Title>
+					</div>
+					<p class="mt-1 text-sm text-muted-foreground">
+						Select a user to charge for the print job.
+					</p>
+				</Card.Header>
+
+				<Card.Content class="min-h-0 flex-1 overflow-y-auto p-4">
+					{#if users.length === 0}
+						<div class="flex flex-col items-center justify-center py-16 text-center">
+							<User class="mb-4 h-10 w-10 text-muted-foreground" />
+							<h3 class="mb-1 text-lg font-medium">No Users Found</h3>
+							<p class="text-muted-foreground">
+								No users are available to select. Please contact your system administrator.
+							</p>
+							<Button variant="outline" class="mt-6" onclick={() => (isUserModalOpen = false)}>
+								Go Back
+							</Button>
+						</div>
+					{:else}
+						<div class="space-y-3">
+							{#each users as user (user.id)}
+								<div
+									role="button"
+									tabindex="0"
+									class="flex items-center justify-between rounded-lg border p-4 transition-all duration-200 hover:shadow-md {selectedUser?.id ===
+									user.id
+										? 'border-primary bg-primary/10 shadow-md ring-2 ring-primary/20'
+										: 'border-border'}"
+									onclick={() => {
+										if (selectedUser?.id === user.id) {
+											// Double-click to unselect
+											selectedUser = null;
+										} else {
+											// Single-click to select
+											selectedUser = user;
+										}
+									}}
+									ondblclick={() => {
+										if (selectedUser?.id === user.id) {
+											selectedUser = null;
+										}
+									}}
+									onkeydown={(e) => {
+										if (e.key === 'Enter' || e.key === ' ') {
+											e.preventDefault();
+											if (selectedUser?.id === user.id) {
+												// Double-click to unselect (using space/enter)
+												selectedUser = null;
+											} else {
+												// Single-click to select (using space/enter)
+												selectedUser = user;
+											}
+										}
+									}}
+								>
+									<div class="flex items-center">
+										<div
+											class="mr-3 flex h-10 w-10 items-center justify-center rounded-full bg-primary/10"
+										>
+											<User class="h-5 w-5 text-primary" />
+										</div>
+										<div>
+											<p class="font-medium">{getDisplayName(user)}</p>
+											<p class="text-sm text-muted-foreground">@{user.username}</p>
+										</div>
+									</div>
+									<div class="text-right">
+										<p class="font-medium">৳{(user.balance || 0).toFixed(2)}</p>
+										{#if selectedUser?.id === user.id}
+											<span class="text-xs font-medium text-primary">Selected</span>
+										{/if}
+									</div>
+								</div>
+							{/each}
+						</div>
+					{/if}
+				</Card.Content>
+
+				<Card.Footer
+					class="sticky bottom-0 z-10 border-t bg-background/95 p-4 backdrop-blur supports-backdrop-filter:bg-background/60"
+				>
+					<Button
+						class="w-full"
+						onclick={() => {
+							if (selectedUser) {
+								isUserModalOpen = false;
+							}
+						}}
+						disabled={!selectedUser}
+					>
+						{#if selectedUser}
+							<span class="flex items-center">
+								<ArrowRight class="mr-2 h-4 w-4" />
+								Use Selected User
+							</span>
+						{:else}
+							<span>Select a User First</span>
+						{/if}
+					</Button>
+				</Card.Footer>
+			</Card.Root>
+		</Dialog.Content>
+	</Dialog.Portal>
+</Dialog.Root>
+
 <div class="mx-auto max-w-md p-4">
 	<Card.Root class="rounded-xl border shadow-sm">
 		<Card.Content class="space-y-4 p-4">
@@ -731,39 +952,21 @@
 				/>
 			</div>
 
-			<!-- User Selection -->
+			<!-- User Selection - MODAL TRIGGER -->
 			<div class="space-y-2">
-				<Label for="user-select">User</Label>
-				<Select.Root
-					type="single"
-					value={selectedUser?.id?.toString() || ''}
-					onValueChange={(value: string) => {
-						if (!value) {
-							selectedUser = null;
-							return;
-						}
-						const userId = parseInt(value);
-						selectedUser = users.find((u) => u.id === userId) || null;
-					}}
+				<Label>User</Label>
+				<Button
+					variant="outline"
+					class="w-full justify-between"
+					onclick={() => (isUserModalOpen = true)}
 				>
-					<Select.Trigger class="w-full">
-						<span class="text-muted-foreground">
-							{selectedUser
-								? getDisplayName(selectedUser) +
-									' (৳' +
-									(selectedUser.balance || 0).toFixed(2) +
-									')'
-								: 'Select user'}
-						</span>
-					</Select.Trigger>
-					<Select.Content>
-						{#each users as user}
-							<Select.Item value={user.id.toString()}>
-								{getDisplayName(user)} (৳{(user.balance || 0).toFixed(2)})
-							</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
+					<span class="text-muted-foreground">
+						{selectedUser
+							? getDisplayName(selectedUser) + ' (৳' + (selectedUser.balance || 0).toFixed(2) + ')'
+							: 'Select user'}
+					</span>
+					<ArrowRight class="h-4 w-4 text-muted-foreground" />
+				</Button>
 			</div>
 
 			<!-- Printer Arrangement Selection - MODAL TRIGGER -->
