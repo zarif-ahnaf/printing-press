@@ -73,7 +73,7 @@ def queue_files(
             raise HttpError(400, f"File {filename} is empty.")
 
         try:
-            num_pages = count_pdf_pages(file_content, filename)
+            num_pages = count_pdf_pages(file_content)
         except ValueError as e:
             raise HttpError(400, str(e))
 

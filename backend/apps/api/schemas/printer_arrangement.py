@@ -2,8 +2,8 @@ from ninja import Schema
 
 
 class PrinterArrangementCreateSchema(Schema):
-    color_printer: int
-    black_and_white_printer: int
+    color_printer: int | None = None
+    bw_printer: int | None = None
 
 
 class PrinterArrangementOutSchema(PrinterArrangementCreateSchema):

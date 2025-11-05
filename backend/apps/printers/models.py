@@ -45,12 +45,12 @@ class PrinterArrangements(models.Model):
             "Arrangement: "
             + ("Decomissioned; " if self.decomissioned else "Active; ")
             + (
-                f"Color Printer - {self.color_printer.model}; "
+                f"Color Printer - {self.color_printer.name}; "
                 if self.color_printer
                 else ""
             )
             + (
-                f"Black & White Printer - {self.bw_printer.model}; "
+                f"Black & White Printer - {self.bw_printer.name}; "
                 if self.bw_printer
                 else ""
             )

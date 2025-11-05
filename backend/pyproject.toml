@@ -12,7 +12,7 @@ dependencies = [
     "servestatic>=3.1.0",
     # Uvicorn and its dependencies
     "uvicorn>=0.37.0",
-    # "uvloop>=0.15.1; sys_platform != 'win32' and (sys_platform != 'cygwin' and platform_python_implementation != 'PyPy')",
+    "uvloop>=0.15.1; sys_platform != 'win32' and (sys_platform != 'cygwin' and platform_python_implementation != 'PyPy')",
     "colorama>=0.4; sys_platform == 'win32'",
     "httptools>=0.7.1",
     "psycopg[binary]>=3.2.10",

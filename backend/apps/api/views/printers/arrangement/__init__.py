@@ -2,7 +2,6 @@ from ninja import Router
 
 from apps.printers.models import PrinterArrangements
 
-from ....http import HttpRequest
 from ....schemas.printer_arrangement import (
     PrinterArrangementOutSchema,
 )
@@ -11,8 +10,14 @@ router = Router(tags=["Printer Arrangements"])
 
 
 @router.get("", response=list[PrinterArrangementOutSchema])
-def list_printer_arrangements(
-    request: HttpRequest,
-):
-    printer_arrangement = PrinterArrangements.objects.all()
-    return printer_arrangement
+def list_arrangements(request):
+    arrangements = PrinterArrangements.objects.all()
+    return [
+        {
+            "id": arr.pk,
+            "decomissioned": arr.decomissioned,
+            "color_printer": arr.color_printer.id if arr.color_printer else None,
+            "bw_printer": arr.bw_printer.id if arr.bw_printer else None,
+        }
+        for arr in arrangements
+    ]

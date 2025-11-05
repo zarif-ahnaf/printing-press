@@ -80,7 +80,7 @@ def process_pdf_file(
             doc.close()
 
 
-def count_pdf_pages(pdf_bytes: bytes, filename: str = "") -> int:
+def count_pdf_pages(pdf_bytes: bytes) -> int:
     """
     Count pages in a PDF from raw bytes using pypdf.
     Raises ValueError on invalid/encrypted/corrupted PDFs.

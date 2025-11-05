@@ -284,6 +284,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/count/pdf/pages/count-pages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Count Pages
+         * @description Count the number of pages in an uploaded PDF file.
+         *     Rejects encrypted, corrupted, or invalid PDFs.
+         */
+        post: operations["apps_api_views_count_pdf_pages_count_pages"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/printers/": {
         parameters: {
             query?: never;
@@ -325,8 +346,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Printer Arrangements */
-        get: operations["apps_api_views_printers_arrangement_list_printer_arrangements"];
+        /** List Arrangements */
+        get: operations["apps_api_views_printers_arrangement_list_arrangements"];
         put?: never;
         post?: never;
         delete?: never;
@@ -613,6 +634,28 @@ export interface components {
             /** Decomissioned */
             decomissioned: boolean;
         };
+        /** PrinterUpdateSchema */
+        PrinterUpdateSchema: {
+            /** Name */
+            name: string;
+            /** Is Color */
+            is_color: boolean;
+            /** Simplex Charge */
+            simplex_charge: number;
+            /** Duplex Charge */
+            duplex_charge: number;
+            /** Decomissioned */
+            decomissioned: boolean;
+        };
+        /** PrinterDecomissionSchema */
+        PrinterDecomissionSchema: {
+            /** Id */
+            id: number;
+            /** Decomissioned */
+            decomissioned: boolean;
+            /** Message */
+            message: string;
+        };
         /** PrinterCreateSchema */
         PrinterCreateSchema: {
             /** Name */
@@ -624,21 +667,12 @@ export interface components {
             /** Duplex Charge */
             duplex_charge: number;
         };
-        /** PrinterDecomissionSchema */
-        PrinterDecomissionSchema: {
-            /** Id */
-            id: number;
-            /** Decomissioned */
-            decomissioned: boolean;
-            /** Message */
-            message: string;
-        };
         /** PrinterArrangementOutSchema */
         PrinterArrangementOutSchema: {
             /** Color Printer */
-            color_printer: number;
-            /** Black And White Printer */
-            black_and_white_printer: number;
+            color_printer?: number | null;
+            /** Bw Printer */
+            bw_printer?: number | null;
             /** Id */
             id: number;
             /** Decomissioned */
@@ -647,9 +681,9 @@ export interface components {
         /** PrinterArrangementCreateSchema */
         PrinterArrangementCreateSchema: {
             /** Color Printer */
-            color_printer: number;
-            /** Black And White Printer */
-            black_and_white_printer: number;
+            color_printer?: number | null;
+            /** Bw Printer */
+            bw_printer?: number | null;
         };
         /** PrinterArrangementDeleteSchema */
         PrinterArrangementDeleteSchema: {
@@ -730,6 +764,11 @@ export interface components {
             description: string;
             /** User Id */
             user_id?: number | null;
+        };
+        /** PageCountResponse */
+        PageCountResponse: {
+            /** Page Count */
+            page_count: number;
         };
         /** QueueUploadResponse */
         QueueUploadResponse: {
@@ -922,6 +961,8 @@ export interface operations {
                     simplex_charge: number;
                     /** Duplex Charge */
                     duplex_charge: number;
+                    /** Decomissioned */
+                    decomissioned: boolean;
                     /**
                      * Image
                      * Format: binary
@@ -1369,6 +1410,36 @@ export interface operations {
             };
         };
     };
+    apps_api_views_count_pdf_pages_count_pages: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /**
+                     * File
+                     * Format: binary
+                     */
+                    file: string;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PageCountResponse"];
+                };
+            };
+        };
+    };
     apps_api_views_printers_printer_list: {
         parameters: {
             query?: never;
@@ -1411,7 +1482,7 @@ export interface operations {
             };
         };
     };
-    apps_api_views_printers_arrangement_list_printer_arrangements: {
+    apps_api_views_printers_arrangement_list_arrangements: {
         parameters: {
             query?: never;
             header?: never;

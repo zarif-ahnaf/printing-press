@@ -10,7 +10,7 @@
 	import { first_name, last_name, user_email } from '$lib/stores/auth.svelte';
 	import { sha256 } from '$lib/functions/sha265';
 	import { navbar_state } from '$lib/stores/navbar.svelte';
-	import { is_logged_in } from '$lib/stores/auth.svelte';
+	import { is_logged_in, is_fetched } from '$lib/stores/auth.svelte';
 	import { page } from '$app/state';
 
 	let initials = $state('');
@@ -30,7 +30,7 @@
 	});
 </script>
 
-{#if navbar_state.visible}
+{#if navbar_state.visible && is_fetched.value}
 	<nav class="sticky top-0 z-50 w-full bg-background shadow-sm">
 		<div class="mx-auto px-4 sm:px-6 lg:px-8">
 			<div class="flex h-16 items-center justify-between">
