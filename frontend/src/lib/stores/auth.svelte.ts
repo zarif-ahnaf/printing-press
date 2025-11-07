@@ -43,7 +43,7 @@ $effect.root(() => {
 			isLoggedInState = false;
 			isAdminUser = null;
 			firstName = lastName = email = username = null;
-			fetchState = 'not_fetched';
+			fetchState = 'fetched';
 		}
 	});
 });

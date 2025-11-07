@@ -25,7 +25,6 @@
 	import { client } from '$lib/client';
 	import { token } from '$lib/stores/token.svelte';
 	import type { ComponentType } from 'svelte';
-
 	// Define TypeScript interfaces matching API responses
 	interface User {
 		id: number;
@@ -37,13 +36,11 @@
 		is_staff: boolean;
 		is_superuser: boolean;
 	}
-
 	function getDisplayName(user: User): string {
 		return user.first_name && user.last_name
 			? `${user.first_name} ${user.last_name}`
 			: user.username;
 	}
-
 	interface Printer {
 		id: number;
 		name: string;
@@ -53,7 +50,6 @@
 		decomissioned: boolean;
 		image: string | null; // Added image field
 	}
-
 	// Updated interface to include printer objects
 	interface PrinterArrangement {
 		id: number;
@@ -64,8 +60,7 @@
 		color_printer_object?: Printer | null;
 		bw_printer_object?: Printer | null;
 	}
-
-	// Queue interface for status information
+	// Updated QueueItem interface to make printer_id optional
 	interface QueueItem {
 		id: number;
 		file: string;
@@ -75,9 +70,8 @@
 		user_id: number;
 		page_count: number | null;
 		print_mode: 'single-sided' | 'double-sided';
-		printer_id: number | null;
+		printer_id?: number | null; // Made optional to match API response
 	}
-
 	// File entry interface
 	interface FileEntry {
 		id: string;
@@ -86,10 +80,10 @@
 		loading: boolean;
 		error: string | null;
 	}
-
 	// State variables
 	let files: FileEntry[] = $state([]);
 	let users: User[] = $state([]);
+	let allUsers: User[] = $state([]); // Store all users for resetting search
 	let printers: Printer[] = $state([]);
 	let arrangements: PrinterArrangement[] = $state([]);
 	let queueData: QueueItem[] = $state([]);
@@ -106,7 +100,7 @@
 	let isArrangementModalOpen: boolean = $state(false); // Modal state
 	let isUserModalOpen: boolean = $state(false); // User modal state
 	let userSearchQuery: string = $state(''); // User search query state
-
+	let userSearchLoading: boolean = $state(false); // Loading state for user search
 	// Helper function to get auth headers
 	function getAuthHeaders(): Record<string, string> {
 		const token = localStorage.getItem('token');
@@ -117,20 +111,15 @@
 		}
 		return {};
 	}
-
 	// Get the printer to use based on arrangement and color selection
 	function getActivePrinter(): Printer | null {
 		if (!selectedArrangement || !printers.length) return null;
-
 		const printerId = isColorPrint
 			? selectedArrangement.color_printer
 			: selectedArrangement.bw_printer;
-
 		if (!printerId) return null;
-
 		return printers.find((p) => p.id === printerId) || null;
 	}
-
 	// Calculate total pages across all files
 	let totalDocumentPages = $derived(
 		files.reduce((sum, file) => {
@@ -138,23 +127,18 @@
 			return sum;
 		}, 0)
 	);
-
 	// Calculate total price based on document pages * copies
 	function calculateTotalPrice(): string {
 		const activePrinter = getActivePrinter();
 		if (!activePrinter || totalDocumentPages === 0 || copies === 0) return '0.00';
-
 		const chargePerPage =
 			printMode === 'double-sided' ? activePrinter.duplex_charge : activePrinter.simplex_charge;
-
 		return (totalDocumentPages * copies * chargePerPage).toFixed(2);
 	}
-
 	let totalPrice = $derived(calculateTotalPrice());
 	let activePrinter = $derived(getActivePrinter());
 	let isCountingPages = $derived(files.some((file) => file.loading));
 	let hasFileErrors = $derived(files.some((file) => file.error));
-
 	// Fetch users, printers, arrangements and queue data
 	$effect(() => {
 		async function loadData() {
@@ -168,66 +152,27 @@
 				});
 				if (currentUserResponse.error) throw new Error('Failed to fetch current user');
 				currentUser = currentUserResponse.data as User;
-
-				// Fetch users
-				const usersResponse = await client.GET('/api/users/', {
-					headers: {
-						Authorization: `Bearer ${token.value}`
-					}
-				});
-				if (usersResponse.error) throw new Error('Failed to fetch users');
-				const usersData = usersResponse.data as User[];
-
-				// Fetch balances for each user
-				const usersWithBalances = await Promise.all(
-					usersData.map(async (user) => {
-						const balanceResponse = await client.GET('/api/admin/balance/{username}', {
-							headers: {
-								Authorization: `Bearer ${token.value}`
-							},
-							params: {
-								path: {
-									username: user.username
-								}
-							}
-						});
-						if (balanceResponse.error) {
-							throw new Error('Failed to fetch user balance');
-						}
-						if (balanceResponse.data) {
-							return {
-								...user,
-								balance: balanceResponse.data?.balance
-									? parseFloat(balanceResponse.data.balance)
-									: 0
-							};
-						}
-						return { ...user, balance: 0 };
-					})
-				);
-				users = usersWithBalances;
-
+				// Fetch all users and their balances
+				await fetchUsers();
+				// Store all users for resetting search later
+				allUsers = [...users];
 				// Fetch active printers
 				const printersResponse = await client.GET('/api/printers/', {
 					headers: {
 						Authorization: `Bearer ${token.value}`
 					}
 				});
-
 				if (printersResponse.error) throw new Error('Failed to fetch printers');
 				const printersData = printersResponse.data as Printer[];
 				printers = printersData.filter((p) => !p.decomissioned);
-
 				// Fetch active arrangements
 				const arrangementsResponse = await client.GET('/api/printers/arrangement/', {
 					headers: {
 						Authorization: `Bearer ${token.value}`
 					}
 				});
-
 				if (arrangementsResponse.error) throw new Error('Failed to fetch printer arrangements');
 				const arrangementsData = arrangementsResponse.data as PrinterArrangement[];
-
 				// Map printers to arrangements for easier access
 				arrangements = arrangementsData
 					.filter((a) => !a.decomissioned)
@@ -236,14 +181,12 @@
 							? printers.find((p) => p.id === arr.color_printer)
 							: null;
 						const bwPrinter = arr.bw_printer ? printers.find((p) => p.id === arr.bw_printer) : null;
-
 						return {
 							...arr,
 							color_printer_object: colorPrinter,
 							bw_printer_object: bwPrinter
 						};
 					});
-
 				// Fetch queue data to show printer status
 				const queueResponse = await client.GET('/api/admin/queue/', {
 					headers: {
@@ -255,7 +198,6 @@
 						}
 					}
 				});
-
 				if (queueResponse.error) throw new Error('Failed to fetch queue data');
 				queueData = queueResponse.data?.queue || [];
 			} catch (err) {
@@ -265,17 +207,14 @@
 				isProcessing = false;
 			}
 		}
-
 		loadData();
 	});
-
 	// Set up drag and drop event listeners
 	onMount(() => {
 		const handleDragOver = (e: DragEvent) => {
 			e.preventDefault();
 			isDragging = true;
 		};
-
 		const handleDragLeave = (e: DragEvent) => {
 			e.preventDefault();
 			const target = e.relatedTarget as Node | null;
@@ -283,46 +222,36 @@
 				isDragging = false;
 			}
 		};
-
 		const handleDrop = (e: DragEvent) => {
 			e.preventDefault();
 			isDragging = false;
-
 			const files = e.dataTransfer?.files;
 			if (files && files.length > 0) {
 				handleFiles(Array.from(files));
 			}
 		};
-
 		window.addEventListener('dragover', handleDragOver as unknown as EventListener);
 		window.addEventListener('dragleave', handleDragLeave as unknown as EventListener);
 		window.addEventListener('drop', handleDrop as unknown as EventListener);
-
 		return () => {
 			window.removeEventListener('dragover', handleDragOver as unknown as EventListener);
 			window.removeEventListener('dragleave', handleDragLeave as unknown as EventListener);
 			window.removeEventListener('drop', handleDrop as unknown as EventListener);
 		};
 	});
-
 	// Handle multiple files selection
 	function handleFiles(fileList: File[]) {
 		const pdfFiles = fileList.filter((file) => file.type === 'application/pdf');
 		const nonPdfFiles = fileList.filter((file) => file.type !== 'application/pdf');
-
 		if (nonPdfFiles.length > 0) {
 			error = `Skipped ${nonPdfFiles.length} non-PDF file${nonPdfFiles.length > 1 ? 's' : ''}. Please select only PDF files.`;
 		}
-
 		if (pdfFiles.length === 0) return;
-
 		error = null;
 		success = null;
-
 		// Add each PDF file
 		pdfFiles.forEach((file) => addFile(file));
 	}
-
 	// Add a new file and start counting pages
 	async function addFile(file: File) {
 		const id = crypto.randomUUID();
@@ -333,9 +262,7 @@
 			loading: true,
 			error: null
 		};
-
 		files = [...files, newFile];
-
 		try {
 			const pageCount = await countPagesForFile(file);
 			files = files.map((f) => (f.id === id ? { ...f, pageCount, loading: false } : f));
@@ -351,30 +278,24 @@
 			);
 		}
 	}
-
 	// Count pages in a single PDF file
 	async function countPagesForFile(file: File): Promise<number> {
 		const formData = new FormData();
 		formData.append('file', file);
-
 		const { data, error } = await client.POST('/api/count/pdf/pages/count-pages', {
 			headers: {
 				Authorization: `Bearer ${token.value}`
 			},
 			body: formData as any
 		});
-
 		if (error) {
 			throw new Error(error || 'Failed to count pages in PDF');
 		}
-
 		if (data?.page_count) {
 			return data.page_count;
 		}
-
 		throw new Error('Invalid response from page count API');
 	}
-
 	// Handle file input change
 	function handleFileChange(event: Event) {
 		const input = event.target as HTMLInputElement;
@@ -385,19 +306,16 @@
 			input.value = '';
 		}
 	}
-
 	// Remove a specific file
 	function removeFile(id: string) {
 		files = files.filter((file) => file.id !== id);
 	}
-
 	// Handle copies input
 	function handleCopiesInput(event: Event) {
 		const input = event.target as HTMLInputElement;
 		const value = parseInt(input.value);
 		copies = isNaN(value) || value < 1 ? 1 : value;
 	}
-
 	// Handle form submission (charge only)
 	async function handleSubmit() {
 		if (
@@ -413,17 +331,14 @@
 			error = 'Please fill in all required fields and ensure all files are processed successfully';
 			return;
 		}
-
 		isProcessing = true;
 		error = null;
 		success = null;
-
 		try {
 			// Calculate charge amount based on total document pages * copies
 			const chargePerPage =
 				printMode === 'double-sided' ? activePrinter.duplex_charge : activePrinter.simplex_charge;
 			const totalAmount = totalDocumentPages * copies * chargePerPage;
-
 			const chargeResponse = await client.POST(`/api/charge/{username}`, {
 				headers: {
 					Authorization: `Bearer ${token.value}`
@@ -438,16 +353,13 @@
 					description: `${isColorPrint ? 'Color' : 'B/W'} ${printMode} print for ${files.length} file${files.length > 1 ? 's' : ''} (${totalDocumentPages} pages × ${copies} copies)`
 				}
 			});
-
 			if (chargeResponse.error) {
 				throw new Error('Failed to charge wallet');
 			}
-
 			const chargeData = chargeResponse.data;
 			success =
 				`Successfully charged ৳${chargeData.charged_amount.toFixed(2)}. ` +
 				`Remaining balance: ৳${chargeData.remaining_balance.toFixed(2)}`;
-
 			// Reset form
 			files = [];
 			selectedUser = null;
@@ -461,22 +373,18 @@
 			isProcessing = false;
 		}
 	}
-
 	// Handle print mode change
 	function changePrintMode(mode: 'single-sided' | 'double-sided') {
 		printMode = mode;
 	}
-
 	// Handle color mode toggle
 	function toggleColorMode() {
 		isColorPrint = !isColorPrint;
 	}
-
 	// Handle arrangement selection in modal
 	function selectArrangement(arrangement: PrinterArrangement) {
 		selectedArrangement = arrangement;
 	}
-
 	// Helper function to check if both printers in an arrangement are the same
 	function isSamePrinter(arrangement: PrinterArrangement): boolean {
 		return (
@@ -485,44 +393,99 @@
 			arrangement.color_printer === arrangement.bw_printer
 		);
 	}
-
 	// Handle user selection in modal
 	function selectUser(user: User) {
 		selectedUser = user;
 	}
-
-	// Derived state for filtered users
-	let filteredUsers = $derived(
-		users.filter(
-			(user) =>
-				getDisplayName(user).toLowerCase().includes(userSearchQuery.toLowerCase()) ||
-				user.username.toLowerCase().includes(userSearchQuery.toLowerCase())
-		)
-	);
-
+	// Fetch users from backend with optional search query
+	async function fetchUsers(searchQuery: string = '') {
+		userSearchLoading = true;
+		try {
+			// Fetch users with search query if provided
+			const usersResponse = await client.GET('/api/users/', {
+				headers: {
+					Authorization: `Bearer ${token.value}`
+				},
+				params: {
+					query: {
+						name: searchQuery || undefined // Pass search query to backend or undefined if empty
+					}
+				}
+			});
+			if (usersResponse.error) throw new Error('Failed to fetch users');
+			const usersData = usersResponse.data as User[];
+			// Fetch balances for each user
+			const usersWithBalances = await Promise.all(
+				usersData.map(async (user) => {
+					try {
+						const balanceResponse = await client.GET('/api/admin/balance/{username}', {
+							headers: {
+								Authorization: `Bearer ${token.value}`
+							},
+							params: {
+								path: {
+									username: user.username
+								}
+							}
+						});
+						if (balanceResponse.data) {
+							return {
+								...user,
+								balance: balanceResponse.data?.balance
+									? parseFloat(balanceResponse.data.balance)
+									: 0
+							};
+						}
+						return { ...user, balance: 0 };
+					} catch (err) {
+						console.warn(`Failed to fetch balance for user ${user.username}:`, err);
+						return { ...user, balance: 0 };
+					}
+				})
+			);
+			users = usersWithBalances;
+			return usersWithBalances;
+		} catch (err) {
+			error = err instanceof Error ? err.message : 'Failed to fetch users';
+			console.error('Error fetching users:', err);
+			return [];
+		} finally {
+			userSearchLoading = false;
+		}
+	}
+	// Effect to handle user search when query changes
+	$effect(() => {
+		// Only fetch when the user modal is open and we have a search query
+		if (isUserModalOpen && userSearchQuery.trim() !== '') {
+			fetchUsers(userSearchQuery.trim());
+		} else if (isUserModalOpen && userSearchQuery.trim() === '') {
+			// Show all users when search query is cleared
+			users = [...allUsers];
+		}
+	});
+	// Effect to reset search when modal closes
+	$effect(() => {
+		if (!isUserModalOpen) {
+			userSearchQuery = '';
+		}
+	});
 	// Helper functions for the enhanced arrangement modal
 	function getTotalPrinterCount(arrangement: PrinterArrangement): number {
 		if (!arrangement) return 0;
 		if (isSamePrinter(arrangement)) return 1;
-
 		const hasBw = arrangement.bw_printer !== null && arrangement.bw_printer_object;
 		const hasColor = arrangement.color_printer !== null && arrangement.color_printer_object;
-
 		return (hasBw ? 1 : 0) + (hasColor ? 1 : 0);
 	}
-
 	// Get available features for an arrangement
 	function getAvailableFeatures(arrangement: PrinterArrangement): string[] {
 		const features: string[] = [];
-
 		if (arrangement.bw_printer_object && !arrangement.bw_printer_object.decomissioned) {
 			features.push('B/W printing');
 		}
-
 		if (arrangement.color_printer_object && !arrangement.color_printer_object.decomissioned) {
 			features.push('Color printing');
 		}
-
 		// Add duplex capability if any printer supports it
 		if (
 			(arrangement.bw_printer_object?.duplex_charge || 0) > 0 ||
@@ -530,61 +493,49 @@
 		) {
 			features.push('Double-sided');
 		}
-
 		return features;
 	}
-
 	// Get minimum price per page across all options
 	function getMinPrice(arrangement: PrinterArrangement): number {
 		const prices = [];
-
 		if (arrangement.bw_printer_object) {
 			prices.push(arrangement.bw_printer_object.simplex_charge);
 			prices.push(arrangement.bw_printer_object.duplex_charge);
 		}
-
 		if (arrangement.color_printer_object) {
 			prices.push(arrangement.color_printer_object.simplex_charge);
 			prices.push(arrangement.color_printer_object.duplex_charge);
 		}
-
 		return Math.min(...prices.filter((p) => p > 0));
 	}
-
 	// Get printer status text
 	function getPrinterStatus(printer: Printer | null | undefined): string {
 		if (!printer) return 'Not assigned';
 		if (printer.decomissioned) return 'Decommissioned';
-
 		// Check if this printer has pending jobs
 		const pendingJobs = queueData.filter((q) => q.printer_id === printer.id && !q.processed).length;
-
 		if (pendingJobs > 10) return 'Heavy load';
 		if (pendingJobs > 5) return 'Moderate load';
 		if (pendingJobs > 0) return 'Light load';
 		return 'Available';
 	}
-
 	// Get printer job count
 	function getPrinterPendingJobCount(printerId: number | null): number {
 		if (!printerId) return 0;
 		return queueData.filter((q) => q.printer_id === printerId && !q.processed).length;
 	}
-
 	// Get printer reliability metrics (mock for now)
 	function getPrinterReliability(printer: Printer | null | undefined): {
 		completionRate: number;
 		avgTime: string;
 	} {
 		if (!printer) return { completionRate: 0, avgTime: 'N/A' };
-
 		// In a real app, this would be fetched from analytics endpoints
 		return {
 			completionRate: 98.5 - Math.random() * 5,
 			avgTime: `${(1.5 + Math.random() * 3).toFixed(1)} min`
 		};
 	}
-
 	// Estimate cost for current document
 	function estimateCostForArrangement(arrangement: PrinterArrangement): {
 		bwCost: number;
@@ -598,12 +549,10 @@
 		) {
 			return { bwCost: 0, colorCost: 0 };
 		}
-
 		const bwSimplexCost =
 			totalDocumentPages * copies * arrangement.bw_printer_object.simplex_charge;
 		const colorDuplexCost =
 			totalDocumentPages * copies * arrangement.color_printer_object.duplex_charge;
-
 		return {
 			bwCost: parseFloat(bwSimplexCost.toFixed(2)),
 			colorCost: parseFloat(colorDuplexCost.toFixed(2))
@@ -623,16 +572,13 @@
 		</div>
 	</div>
 {/if}
-
 <!-- Enhanced Arrangement Selection Modal -->
 <Dialog.Root open={isArrangementModalOpen} onOpenChange={(open) => (isArrangementModalOpen = open)}>
 	<Dialog.Trigger class="hidden" />
-
 	<Dialog.Portal>
 		<Dialog.Overlay
 			class="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm transition-opacity duration-300 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0"
 		/>
-
 		<Dialog.Content
 			class="fixed top-1/2 left-1/2 z-50 max-h-[90vh] w-full max-w-3xl -translate-x-1/2 -translate-y-1/2 rounded-2xl border bg-card shadow-xl transition-all duration-300 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-100 sm:w-full"
 		>
@@ -646,16 +592,7 @@
 							Choose the perfect printing setup for your needs
 						</p>
 					</div>
-					<Button
-						variant="ghost"
-						size="icon"
-						class="h-9 w-9 rounded-lg hover:bg-accent"
-						onclick={() => (isArrangementModalOpen = false)}
-					>
-						<X class="h-5 w-5 text-muted-foreground" />
-					</Button>
 				</div>
-
 				<div class="flex-1 overflow-y-auto p-6 pt-2">
 					<div class="mb-6 flex items-center space-x-3 rounded-xl bg-muted/30 p-3">
 						<div class="rounded-lg bg-primary/10 p-2">
@@ -666,7 +603,6 @@
 							arrangement that best matches your printing needs and budget.
 						</p>
 					</div>
-
 					{#if arrangements.length === 0}
 						<div class="flex flex-col items-center justify-center py-16 text-center">
 							<div class="mb-4 rounded-full bg-muted p-4">
@@ -721,7 +657,6 @@
 											<CircleCheck class="h-5 w-5 text-primary-foreground" />
 										</div>
 									{/if}
-
 									<div class="p-5">
 										<!-- Arrangement Header -->
 										<div class="mb-5 flex flex-col sm:flex-row sm:items-center sm:justify-between">
@@ -771,7 +706,6 @@
 												</div>
 											</div>
 										</div>
-
 										<!-- Arrangement Diagram -->
 										<div class="mb-5">
 											<div class="flex flex-col sm:flex-row sm:items-center sm:space-x-6">
@@ -938,7 +872,6 @@
 												</div>
 											</div>
 										</div>
-
 										<!-- Detailed Pricing and Specifications -->
 										<div class="overflow-hidden rounded-xl border">
 											<div class="grid grid-cols-2 divide-x divide-border">
@@ -1035,7 +968,6 @@
 												</div>
 											</div>
 										</div>
-
 										<!-- Cost Estimate Section based on current files -->
 										{#if totalDocumentPages > 0 && copies > 0}
 											<div class="mt-5 border-t border-border pt-5">
@@ -1073,7 +1005,6 @@
 												</div>
 											</div>
 										{/if}
-
 										<!-- Additional Details Section -->
 										{#if !isSamePrinter(arrangement) && arrangement.bw_printer_object && arrangement.color_printer_object}
 											<div class="mt-5 border-t border-border pt-5">
@@ -1133,7 +1064,6 @@
 												</div>
 											</div>
 										{/if}
-
 										<!-- Admin Controls -->
 										{#if currentUser?.is_staff}
 											<div class="mt-5 flex justify-end space-x-3 border-t pt-5">
@@ -1151,7 +1081,6 @@
 						</div>
 					{/if}
 				</div>
-
 				<div class="border-t bg-card/80 p-6 backdrop-blur-sm">
 					<div class="mb-4 rounded-lg bg-muted/40 p-3">
 						<p class="flex items-center text-sm font-medium">
@@ -1184,32 +1113,20 @@
 		</Dialog.Content>
 	</Dialog.Portal>
 </Dialog.Root>
-
 <!-- User Selection Modal -->
 <Dialog.Root open={isUserModalOpen} onOpenChange={(open) => (isUserModalOpen = open)}>
 	<Dialog.Trigger class="hidden" />
-
 	<Dialog.Portal>
 		<Dialog.Overlay
 			class="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm transition-opacity duration-300 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0"
 		/>
-
 		<Dialog.Content
 			class="fixed top-1/2 left-1/2 z-50 max-h-[90vh] w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border bg-card shadow-xl transition-all duration-300 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-100 sm:w-full"
 		>
 			<div class="flex h-full flex-col">
 				<div class="flex items-center justify-between border-b p-5">
 					<Dialog.Title class="text-xl font-bold text-foreground">Select User</Dialog.Title>
-					<Button
-						variant="ghost"
-						size="icon"
-						class="h-9 w-9 rounded-lg hover:bg-accent"
-						onclick={() => (isUserModalOpen = false)}
-					>
-						<X class="h-5 w-5 text-muted-foreground" />
-					</Button>
 				</div>
-
 				<div class="flex-1 overflow-y-auto p-5">
 					<div class="mb-6">
 						<div class="relative">
@@ -1223,10 +1140,18 @@
 							<Search
 								class="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground"
 							/>
+							{#if userSearchLoading}
+								<LoaderCircle
+									class="absolute top-1/2 right-3 h-4 w-4 -translate-y-1/2 animate-spin text-primary"
+								/>
+							{/if}
 						</div>
 					</div>
-
-					{#if users.length === 0}
+					{#if userSearchLoading}
+						<div class="flex justify-center py-8">
+							<LoaderCircle class="h-6 w-6 animate-spin text-primary" />
+						</div>
+					{:else if users.length === 0}
 						<div class="flex flex-col items-center justify-center py-16 text-center">
 							<div class="mb-4 rounded-full bg-muted p-3">
 								<User class="h-6 w-6 text-muted-foreground" />
@@ -1236,17 +1161,9 @@
 								No users are available to select. Please contact your system administrator.
 							</p>
 						</div>
-					{:else if filteredUsers.length === 0}
-						<div class="flex flex-col items-center justify-center py-12 text-center">
-							<div class="mb-3 rounded-full bg-muted p-2.5">
-								<Search class="h-5 w-5 text-muted-foreground" />
-							</div>
-							<p class="font-medium text-muted-foreground">No users match your search</p>
-							<p class="mt-1 text-sm text-muted-foreground">Try adjusting your search terms</p>
-						</div>
 					{:else}
 						<div class="divide-y divide-border">
-							{#each filteredUsers as user (user.id)}
+							{#each users as user (user.id)}
 								<div
 									role="button"
 									tabindex="0"
@@ -1313,7 +1230,6 @@
 						</div>
 					{/if}
 				</div>
-
 				<div class="border-t bg-card/80 p-5 backdrop-blur-sm">
 					<Button
 						class="w-full py-5 text-base font-medium transition-transform hover:scale-[1.02] active:scale-[0.98]"
@@ -1338,7 +1254,6 @@
 		</Dialog.Content>
 	</Dialog.Portal>
 </Dialog.Root>
-
 <div class="mx-auto max-w-md p-4">
 	<Card.Root class="rounded-xl border shadow-sm">
 		<Card.Content class="space-y-4 p-4">
@@ -1416,7 +1331,6 @@
 					class="hidden"
 				/>
 			</div>
-
 			<!-- Copies Input -->
 			<div class="space-y-2">
 				<Label for="copies">Number of Copies</Label>
@@ -1430,7 +1344,6 @@
 					class="w-full"
 				/>
 			</div>
-
 			<!-- User Selection - MODAL TRIGGER -->
 			<div class="space-y-2">
 				<Label>User</Label>
@@ -1447,7 +1360,6 @@
 					<ArrowRight class="h-4 w-4 text-muted-foreground" />
 				</Button>
 			</div>
-
 			<!-- Printer Arrangement Selection - MODAL TRIGGER -->
 			<div class="space-y-2">
 				<Label>Printer Arrangement</Label>
@@ -1462,7 +1374,6 @@
 					<ArrowRight class="h-4 w-4 text-muted-foreground" />
 				</Button>
 			</div>
-
 			<!-- Color Mode Toggle -->
 			{#if selectedArrangement}
 				<div class="space-y-2">
@@ -1489,7 +1400,6 @@
 					</div>
 				</div>
 			{/if}
-
 			<!-- Print Mode Toggle -->
 			<div class="space-y-2">
 				<Label>Print Mode</Label>
@@ -1514,7 +1424,6 @@
 					</Button>
 				</div>
 			</div>
-
 			<!-- Pricing Summary -->
 			<div class="rounded-lg bg-muted/30 p-3">
 				<h3 class="mb-2 block text-sm font-medium">Pricing Summary</h3>
@@ -1566,7 +1475,6 @@
 					</p>
 				{/if}
 			</div>
-
 			<!-- Error and Success Messages -->
 			{#if error}
 				<Alert.Root variant="destructive">
@@ -1575,7 +1483,6 @@
 					<Alert.Description>{error}</Alert.Description>
 				</Alert.Root>
 			{/if}
-
 			{#if success}
 				<Alert.Root variant="default" class="border-green-500 bg-green-50 text-green-800">
 					<CircleCheck class="h-4 w-4 text-green-500" />
@@ -1584,7 +1491,6 @@
 				</Alert.Root>
 			{/if}
 		</Card.Content>
-
 		<Card.Footer class="p-4">
 			<Button
 				class="w-full"
